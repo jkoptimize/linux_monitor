@@ -8,7 +8,7 @@ set(SOURCES
    utils/read_file.cpp
 )
 
-
+add_executable(monitor ${SOURCES})
 
 
 add_subdirectory(src)

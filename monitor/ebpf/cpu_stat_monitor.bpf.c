@@ -1,55 +1,71 @@
-// cpu_usage.bpf.c
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
-#include <bpf/bpf_core_read.h>
-#include "cpu_stat_monitor.h"
+#include <bpf/bpf_tracing.h>
 
+
+// 存储内核符号地址
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
-    __type(key, u32);
-    __type(value, struct stats);
     __uint(max_entries, 1);
-} stats_map SEC(".maps");
+    __type(key, int);
+    __type(value, unsigned long);
+} kcpustat_addr_map SEC(".maps");
 
-// 当前运行任务开始时间
+// 存储统计结果
 struct {
     __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-    __type(key, u32);
-    __type(value, u64);
     __uint(max_entries, 1);
-} start_time SEC(".maps");
+    __type(key, int);
+    __type(value, struct kernel_cpustat);
+} cpu_stats_map SEC(".maps");
 
-SEC("tracepoint/sched/sched_switch")
-int trace_cpu_time(struct trace_event_raw_sched_switch *ctx)
+extern struct kernel_cpustat kernel_cpustat __ksym;
+
+SEC("kprobe/account_process_tick")
+int BPF_KPROBE(account_process_tick_probe)
 {
-    #define PF_KTHREAD		0x00200000	
-    u32 zero = 0;
-    u64 ts = bpf_ktime_get_ns();
-    u32 cpu = bpf_get_smp_processor_id();
-    u64 *p_start = bpf_map_lookup_elem(&start_time, &zero);
-    struct task_struct *prev = (struct task_struct *)ctx->prev_comm;
-    struct task_struct *next = (struct task_struct *)ctx->next_comm;
+    int key = 0;
+    unsigned long *kcpustat_addr;
 
-    if (p_start) {
-        u64 delta = ts - *p_start;
-        struct stats *data = bpf_map_lookup_elem(&stats_map, &zero);
-        if (data && cpu < MAX_CPU) {
-            if (BPF_CORE_READ(prev, flags) & PF_KTHREAD) {
-                data->cpus[cpu].system += delta;
-            } else {
-                data->cpus[cpu].user += delta;
-            }
-            bpf_printk("CPU %d switch out task %s (pid: %d), delta: %llu ns\n",
-                       cpu, ctx->prev_comm, ctx->prev_pid, delta);
-        } else {
-            bpf_printk("data is NULL or cpu id %d out of range\n", cpu);
-            return 0;
-        }
+
+    kcpustat_addr = bpf_this_cpu_ptr(&kernel_cpustat);
+
+    // 获取内核符号地址
+    kcpustat_addr = bpf_map_lookup_elem(&kcpustat_addr_map, &key);
+    if (!kcpustat_addr || *kcpustat_addr == 0) {
+        bpf_printk("kcpustat_addr not set\n");
+        return 0;
     }
+    bpf_printk("kcpustat_addr: %lx\n", *kcpustat_addr);
 
-    // 下一个任务开始时间
-    bpf_map_update_elem(&start_time, &zero, &ts, BPF_ANY);
+    struct kernel_cpustat stats = {};
+    long ret = bpf_probe_read_kernel(&stats, sizeof(stats), (void *)(*kcpustat_addr));
+    if (ret < 0) {
+        bpf_printk("Failed to read kernel_cpustat at %lx: %ld\n", *kcpustat_addr, ret);
+        return 0;
+    }
+    bpf_printk("Read cpustat: user=%llu, nic=%llu, system=%llu, idle=%llu iowait=%llu\n",
+               stats.cpustat[0], stats.cpustat[1], stats.cpustat[2], stats.cpustat[3], stats.cpustat[4]);
 
+
+    // // 获取当前CPU的存储位置
+    // stats = bpf_map_lookup_elem(&cpu_stats_map, &key);
+    // if (!stats) {
+    //     return 0;
+    // }
+
+    // // 计算当前CPU的偏移量
+    // // 对于x86架构，per-CPU偏移通常是固定的
+    // int cpu_id = bpf_get_smp_processor_id();
+    // unsigned long per_cpu_offset = cpu_id * 8192; // 典型的per-CPU区域大小
+    
+    // // 计算当前CPU的kernel_cpustat地址
+    // unsigned long current_cpu_addr = *kcpustat_addr + per_cpu_offset;
+    
+    // // 读取当前CPU的统计信息
+    // struct kernel_cpustat *current_stats = (struct kernel_cpustat *)current_cpu_addr;
+    // bpf_probe_read_kernel(stats, sizeof(struct kernel_cpustat), current_stats);
+    
     return 0;
 }
 

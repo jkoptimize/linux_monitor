@@ -91,8 +91,10 @@ int main(int argc, char **argv)
 	}
 
 cleanup:
-	if (hook_created)
+	if (hook_created) {
 		bpf_tc_hook_destroy(&tc_hook_in);
+		bpf_tc_hook_destroy(&tc_hook_out);
+	}
 	net_monitor_bpf__destroy(skel);
 	return -err;
 }

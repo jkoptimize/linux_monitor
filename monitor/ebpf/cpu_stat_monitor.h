@@ -13,11 +13,13 @@ struct cpu_stat {
     long long irq;
     long long softirq;
     long long steal;
+    long long guest;
+    long long guest_nice;
 };
 
-struct stats {
-    struct cpu_stat cpus[MAX_CPU];
-    int cpu_count;
-};
+// struct stats {
+//     struct cpu_stat cpu;
+//     int cpu_id;
+// };
 
 #endif /* __BOOTSTRAP_H */
