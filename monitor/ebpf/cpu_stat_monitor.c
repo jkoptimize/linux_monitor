@@ -44,18 +44,18 @@ int main(int argc, char **argv) {
     struct cpu_stat_monitor_bpf *skel;
     int err, map_fd;
     int key = 0;
-    unsigned long kcpustat_addr;
+    // unsigned long kcpustat_addr;
     
     // 设置信号处理
     signal(SIGINT, sig_handler);
     signal(SIGTERM, sig_handler);
     
-    // 获取内核符号地址
-    kcpustat_addr = get_kernel_symbol("kernel_cpustat");
-    if (!kcpustat_addr) {
-        fprintf(stderr, "Failed to get kernel_cpustat address\n");
-        return 1;
-    }
+    // // 获取内核符号地址
+    // kcpustat_addr = get_kernel_symbol("kernel_cpustat");
+    // if (!kcpustat_addr) {
+    //     fprintf(stderr, "Failed to get kernel_cpustat address\n");
+    //     return 1;
+    // }
     
     // 打开BPF程序
     skel = cpu_stat_monitor_bpf__open();
@@ -72,17 +72,17 @@ int main(int argc, char **argv) {
     }
 
         
-    // 在加载前设置符号地址
-    map_fd = bpf_map__fd(skel->maps.kcpustat_addr_map);
+    ////在加载前设置符号地址
+    // map_fd = bpf_map__fd(skel->maps.kcpustat_addr_map);
     // printf("Debug: Map FD = %d\n", map_fd);
 
-    if (bpf_map_update_elem(map_fd, &key, &kcpustat_addr, BPF_ANY) != 0) {
-        if (err != 0) {
-            fprintf(stderr, "Error: Failed to update map. errno=%d (%s)\n", errno, strerror(errno));
-            fprintf(stderr, "Error: bpf_map_update_elem returned: %d\n", err);
-            goto cleanup;
-        }
-    }
+    // if (bpf_map_update_elem(map_fd, &key, &kcpustat_addr, BPF_ANY) != 0) {
+    //     if (err != 0) {
+    //         fprintf(stderr, "Error: Failed to update map. errno=%d (%s)\n", errno, strerror(errno));
+    //         fprintf(stderr, "Error: bpf_map_update_elem returned: %d\n", err);
+    //         goto cleanup;
+    //     }
+    // }
 
     // 附加BPF程序
     err = cpu_stat_monitor_bpf__attach(skel);
@@ -97,21 +97,21 @@ int main(int argc, char **argv) {
     while (!exiting) {
         sleep(1);
         
-        // 读取并打印统计信息
-        int num_cpus = libbpf_num_possible_cpus();
-        struct kernel_cpustat *stats = calloc(num_cpus, sizeof(struct kernel_cpustat));
-        if (!stats) continue;
+        // // 读取并打印统计信息
+        // int num_cpus = libbpf_num_possible_cpus();
+        // struct kernel_cpustat *stats = calloc(num_cpus, sizeof(struct kernel_cpustat));
+        // if (!stats) continue;
         
-        if (bpf_map_lookup_elem(bpf_map__fd(skel->maps.cpu_stats_map), &key, stats) == 0) {
-            for (int i = 0; i < num_cpus && i < 4; i++) { // 只显示前4个CPU
-                printf("CPU%d: user=%llu nice=%llu system=%llu idle=%llu iowait=%llu\n",
-                       i, stats[i].cpustat[0], stats[i].cpustat[1], 
-                       stats[i].cpustat[2], stats[i].cpustat[3], stats[i].cpustat[4]);
-            }
-            printf("---\n");
-        }
+        // if (bpf_map_lookup_elem(bpf_map__fd(skel->maps.cpu_stats_map), &key, stats) == 0) {
+        //     for (int i = 0; i < num_cpus && i < 4; i++) { // 只显示前4个CPU
+        //         printf("CPU%d: user=%llu nice=%llu system=%llu idle=%llu iowait=%llu\n",
+        //                i, stats[i].cpustat[0], stats[i].cpustat[1], 
+        //                stats[i].cpustat[2], stats[i].cpustat[3], stats[i].cpustat[4]);
+        //     }
+        //     printf("---\n");
+        // }
         
-        free(stats);
+        // free(stats);
     }
     
 cleanup:
