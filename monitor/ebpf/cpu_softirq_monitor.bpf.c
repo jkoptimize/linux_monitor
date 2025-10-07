@@ -19,12 +19,6 @@ struct {
     __type(value, struct softirq_stat);
 } softirq_stats SEC(".maps");
 
-// 软中断类型名称（与 /proc/softirqs 对应）
-const char *softirq_vec_names[NR_SOFTIRQS] = {
-    "HI", "TIMER", "NET_TX", "NET_RX", "BLOCK", "IRQ_POLL",
-    "TASKLET", "SCHED", "HRTIMER", "RCU"
-};
-
 // 挂载点：软中断处理开始
 SEC("tracepoint/irq/softirq_entry")
 int handle_softirq_entry(struct trace_event_raw_softirq *ctx)
