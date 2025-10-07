@@ -1,118 +1,146 @@
-// #include <linux/types.h>
-// #include <bpf/bpf.h>
-// #include "bpf/bpf_helpers.h"
-// #include <bpf/bpf_tracing.h>
-#include <linux/bpf.h>
+#include <vmlinux.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
+#include "cpu_stat_monitor.h"
+
+
+#define MAX_NICE	19
+#define MIN_NICE	-20
+#define NICE_WIDTH	(MAX_NICE - MIN_NICE + 1)
+
+#define MAX_USER_RT_PRIO	100
+#define MAX_RT_PRIO		MAX_USER_RT_PRIO
+
+#define MAX_PRIO		(MAX_RT_PRIO + NICE_WIDTH)
+#define DEFAULT_PRIO		(MAX_RT_PRIO + NICE_WIDTH / 2)
+
+#define NICE_TO_PRIO(nice)	((nice) + DEFAULT_PRIO)
+#define PRIO_TO_NICE(prio)	((prio) - DEFAULT_PRIO)
 
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
 
-enum cpu_usage_stat {
-	CPUTIME_USER,
-	CPUTIME_NICE,
-	CPUTIME_SYSTEM,
-	CPUTIME_SOFTIRQ,
-	CPUTIME_IRQ,
-	CPUTIME_IDLE,
-	CPUTIME_IOWAIT,
-	CPUTIME_STEAL,
-	CPUTIME_GUEST,
-	CPUTIME_GUEST_NICE,
-	NR_STATS,
-};
+struct {
+    __uint(type, BPF_MAP_TYPE_RINGBUF);
+    __uint(max_entries, 256 * 1024);
+} ringbuffer SEC(".maps");
 
-struct kernel_cpustat {
-	unsigned long long cpustat[NR_STATS];
-};
+struct {
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __type(key, u64); // tid
+    __type(value, void *);
+    __uint(max_entries, 1024);
+} saved_seq_file SEC(".maps");
+
+extern struct kernel_cpustat kernel_cpustat __ksym;
 
 
-SEC("fexit/kcpustat_cpu_fetch")
-int BPF_PROG(fexit_kcpustat_cpu_fetch, struct kernel_cpustat *kcpustat, int cpu) {
-  return 0;
+static inline int task_nice(const struct task_struct *p)
+{
+	return PRIO_TO_NICE((p)->static_prio);
 }
 
-// // 定义 cpu_stat 结构体（必须与内核匹配，但不使用 CO-RE）
-// struct cpu_stat {
-//     __u64 user;
-//     __u64 nice;
-//     __u64 sys;
-//     __u64 idle;
-//     __u64 iowait;
-//     __u64 irq;
-//     __u64 softirq;
-//     __u64 steal;
-//     __u64 guest;
-//     __u64 guest_nice;
-// };
 
-// // 定义 kernel_cpustat 结构体（必须与内核匹配，但不使用 CO-RE）
-// // 注意：这是关键！必须根据您的内核版本定义
-// struct kernel_cpustat {
-//     unsigned long cpustat[1024][1024]; // 假设 NR_CPUS=1024
-//     // 实际需要根据您的内核版本精确定义
-//     // 例如：在 5.15 内核中，cpustat 是 [NR_CPUS][NR_CPUS]
-// };
+SEC("kprobe/account_process_tick")
+int BPF_KPROBE(kprobe_account_process_tick, struct task_struct *p, u64 cputime)
+{
+    u64 tid = bpf_get_current_pid_tgid();
+    int cpu = bpf_get_smp_processor_id();
+    // struct cpu_stat stat = {};
 
-// // BPF 映射定义
-// struct {
-//   __uint(type, BPF_MAP_TYPE_HASH);
-//   __uint(max_entries, 8192);
-//   __type(key, pid_t);
-//   __type(value, u64);
-// } exec_start SEC(".maps");
+    struct kernel_cpustat* ptr;
+    ptr = bpf_this_cpu_ptr(&kernel_cpustat);
 
-// struct {
-//   __uint(type, BPF_MAP_TYPE_RINGBUF);
-//   __uint(max_entries, 256 * 1024);
-// } rb SEC(".maps");
+    struct kernel_cpustat stat = {};
+    bpf_probe_read_kernel(&stat, sizeof(stat), ptr);
 
-// // 常量定义（必须在 BPF 程序中定义）
-// #define CPUTIME_USER 0
-// #define CPUTIME_NICE 1
-// #define CPUTIME_SYSTEM 2
-// #define CPUTIME_IDLE 3
-// #define CPUTIME_IOWAIT 4
-// #define CPUTIME_IRQ 5
-// #define CPUTIME_SOFTIRQ 6
-// #define CPUTIME_STEAL 7
-// #define CPUTIME_GUEST 8
-// #define CPUTIME_GUEST_NICE 9
+    bpf_printk("user:%lld nice:%lld system:%lld", stat.cpustat[0], stat.cpustat[1], stat.cpustat[2]);
 
-// // 必须使用 bpf_probe_read 读取内核数据
-// SEC("fexit/kcpustat_cpu_fetch")
-// int BPF_PROG(fexit_kcpustat_cpu_fetch, struct kernel_cpustat *kcpustat,
-//              int cpu) {
-//   struct cpu_stat *stat;
+    // if (task_nice(p) > 0) {
+    //     stat.nice += cputime;
+    //     stat.guest_nice += cputime;
+    // } else {
+    //     stat.user += cputime;
+    //     stat.guest += cputime;
+    // }
 
-//   stat = bpf_ringbuf_reserve(&rb, sizeof(*stat), 0);
-//   if (!stat)
+    return 0;
+}
+
+
+// SEC("kprobe/account_steal_time")
+// int BPF_KPROBE(kprobe_account_steal_time,  u64 cputime)
+// {
+//     u64 tid = bpf_get_current_pid_tgid();
+//     int cpu = bpf_get_smp_processor_id();
+//     struct cpu_stat stat = {};
+
+//     stat.steal += cputime;
 //     return 0;
-
-//   // 使用 bpf_probe_read 读取每个字段（关键！）
-//   bpf_probe_read(&stat->user, sizeof(stat->user), 
-//                  &kcpustat->cpustat[CPUTIME_USER][0]);
-//   bpf_probe_read(&stat->nice, sizeof(stat->nice), 
-//                  &kcpustat->cpustat[CPUTIME_NICE][0]);
-//   bpf_probe_read(&stat->sys, sizeof(stat->sys), 
-//                  &kcpustat->cpustat[CPUTIME_SYSTEM][0]);
-//   bpf_probe_read(&stat->idle, sizeof(stat->idle), 
-//                  &kcpustat->cpustat[CPUTIME_IDLE][0]);
-//   bpf_probe_read(&stat->iowait, sizeof(stat->iowait), 
-//                  &kcpustat->cpustat[CPUTIME_IOWAIT][0]);
-//   bpf_probe_read(&stat->irq, sizeof(stat->irq), 
-//                  &kcpustat->cpustat[CPUTIME_IRQ][0]);
-//   bpf_probe_read(&stat->softirq, sizeof(stat->softirq), 
-//                  &kcpustat->cpustat[CPUTIME_SOFTIRQ][0]);
-//   bpf_probe_read(&stat->steal, sizeof(stat->steal), 
-//                  &kcpustat->cpustat[CPUTIME_STEAL][0]);
-//   bpf_probe_read(&stat->guest, sizeof(stat->guest), 
-//                  &kcpustat->cpustat[CPUTIME_GUEST][0]);
-//   bpf_probe_read(&stat->guest_nice, sizeof(stat->guest_nice), 
-//                  &kcpustat->cpustat[CPUTIME_GUEST_NICE][0]);
-
-//   bpf_ringbuf_submit(stat, 0);
-//   return 0;
 // }
+
+// extern struct rq runqueues __ksym;
+
+// SEC("kprobe/account_idle_time")
+// int BPF_KPROBE(kprobe_account_idle_time,  u64 cputime)
+// {
+//     u64 tid = bpf_get_current_pid_tgid();
+//     int cpu = bpf_get_smp_processor_id();
+//     struct cpu_stat stat = {};
+
+//     // struct rq *rq;
+//     // rq = scx_bpf_cpu_rq(cpu);
+//     // bpf_this_cpu_ptr(&runqueues);
+
+//     // int tmp = __sync_val_compare_and_swap(&rq->nr_iowait, );
+//     if (1) {
+//         stat.iowait += cputime;
+//     } else {
+//         stat.idle += cputime;
+//     }
+//     stat.steal += cputime;
+//     return 0;
+// }
+
+// SEC("kprobe/account_user_time")
+// int BPF_KPROBE(kprobe_account_user_time, struct task_struct *p, u64 cputime)
+// {
+//     u64 tid = bpf_get_current_pid_tgid();
+//     int cpu = bpf_get_smp_processor_id();
+//     struct cpu_stat stat = {};
+
+//     if(task_nice(p) > 0) {
+//         stat.nice += cputime;
+//     } else {
+//         stat.user += cputime;
+//     }
+//     return 0;
+// }
+
+// SEC("kprobe/account_system_index_time")
+// int BPF_KPROBE(kprobe_account_system_index_time, struct task_struct *p, u64 cputime, enum cpu_usage_stat index)
+// {
+//     u64 tid = bpf_get_current_pid_tgid();
+//     int cpu = bpf_get_smp_processor_id();
+//     struct cpu_stat stat = {};
+
+//     switch(index)
+//     {
+//         case CPUTIME_SYSTEM:
+//             stat.system += cputime;
+//             break;
+//         case CPUTIME_SOFTIRQ:
+//             stat.irq += cputime;
+//             break;
+//         case CPUTIME_IRQ:
+//             stat.irq += cputime;
+//             break;
+//         default:
+//             bpf_printk("invalid index: %d", index);
+//             return 0;
+//     }
+    
+//     return 0;
+// }
+

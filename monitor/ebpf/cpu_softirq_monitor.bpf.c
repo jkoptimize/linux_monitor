@@ -26,7 +26,7 @@ int handle_softirq_entry(struct trace_event_raw_softirq *ctx)
     u32 vec = ctx->vec;
     u32 cpu = bpf_get_smp_processor_id();
     u64 ts = bpf_ktime_get_ns();
-    
+
     struct softirq_key key = { .cpu = cpu, .vec = vec };
     bpf_map_update_elem(&start_time, &key, &ts, BPF_ANY);
     return 0;
