@@ -16,5 +16,10 @@ struct ip_packet_info {
     __u64 drop_in_out;
 };
 
+int init_net_monitor();
+// 获取 packetsInfo map 的文件描述符
+int net_monitor_get_packetsinfo_fd();
+
+
 
 #endif /* _NET_MONITOR_H */

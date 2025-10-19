@@ -9,7 +9,7 @@ import (
     "context"
 
     // "linux_monitor/agent"
-    "linux_monitor/exporter"
+    "monitor/exporter"
     // "ebpf-monitoring/ebpf"
 )
 

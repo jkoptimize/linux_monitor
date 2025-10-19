@@ -17,9 +17,6 @@ struct cpu_stat {
     long long guest_nice;
 };
 
-// struct stats {
-//     struct cpu_stat cpu;
-//     int cpu_id;
-// };
+
 
 #endif /* __BOOTSTRAP_H */

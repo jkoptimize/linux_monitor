@@ -1,6 +1,6 @@
 package exporter
 /*
-#cgo CFLAGS: -I${SRCDIR}/../monitor/ebpf
+#cgo CFLAGS: -I${SRCDIR}/../ebpf
 #cgo LDFLAGS: -lmonitor -lelf -lz
 #include "cpu_softirq_monitor.h"
 */

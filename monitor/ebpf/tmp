@@ -21,15 +21,15 @@ ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
 GO ?= go
 
-# C 应用程序（如果需要的话）
+# C 应用程序（保持原样，无需修改）
 APPS = cpu_softirq_monitor cpu_stat_monitor net_monitor
 
 # Go 应用程序
 GO_APP = monitor
-GO_MAIN := ../agent/main.go ../agent/config.go
+GO_MAIN := ../../agent/main.go ../../agent/config.go
 
 # C 包装器源文件（用于 Go CGO）
-C_WRAPPER_SRCS = cpu_softirq_monitor.c cpu_stat_monitor.c net_monitor.c
+C_WRAPPER_SRCS = cpu_softirq_monitor.c
 C_WRAPPER_OBJS = $(addprefix $(OUTPUT)/, $(C_WRAPPER_SRCS:.c=.o))
 
 # 共享库（改为动态库）
@@ -65,7 +65,7 @@ $(call allow-override,LD,$(CROSS_COMPILE)ld)
 all: $(C_SHARED_LIB) build-go  # 主要构建共享库和 Go 程序
 
 .PHONY: apps
-apps: $(APPS)  # 可选：构建 C 应用程序
+apps: $(APPS)  # 保持原样
 
 .PHONY: clean
 clean:
@@ -115,14 +115,24 @@ $(C_SHARED_LIB): $(C_WRAPPER_OBJS) | $(OUTPUT)
 # Build user-space code for C apps (可选)
 $(patsubst %,$(OUTPUT)/%.o,$(APPS)): %.o: %.skel.h
 
+# Build C source files (所有 .c 文件)
 $(OUTPUT)/%.o: %.c $(wildcard %.h) | $(OUTPUT)
 	$(call msg,CC,$@)
 	$(Q)$(CC) $(CFLAGS) $(INCLUDES) -c $(filter %.c,$^) -o $@
 
-# Build C application binary (可选)
-$(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) | $(OUTPUT)
+# 修改点：动态处理所有应用的源文件（包括 _main.c）
+$(APPS): %: | $(OUTPUT)
+	# 获取应用名
+	APP = $@
+	# 检查是否存在 _main.c 文件
+	MAIN_SRC = $(wildcard $(APP)_main.c)
+	# 生成源文件列表（主文件 + _main.c 如果存在）
+	SOURCES = $(APP).c $(if $(MAIN_SRC), $(APP)_main.c)
+	# 生成对应的 .o 文件列表
+	OBJS = $(addprefix $(OUTPUT)/, $(SOURCES:.c=.o))
+	# 链接所有 .o 文件
 	$(call msg,BINARY,$@)
-	$(Q)$(CC) $(CFLAGS) $< $(LIBBPF_OBJ) $(ALL_LDFLAGS) -lelf -lz -o $@
+	$(Q)$(CC) $(CFLAGS) $(OBJS) $(LIBBPF_OBJ) $(ALL_LDFLAGS) -lelf -lz -o $@
 
 # Build Go object
 build-go: $(GO_MAIN) $(C_SHARED_LIB) $(LIBBPF_OBJ)
