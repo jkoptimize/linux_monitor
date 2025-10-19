@@ -49,6 +49,3 @@ docker ps
 # echo "InfluxDB: http://localhost:8086 (admin/admin123)"
 # echo "Monitoring API: http://localhost:8080"
 # echo ""
-# echo "Next steps:"
-# echo "1. Run the monitoring service: go run server/main.go"
-# echo "2. Open Grafana and create your dashboard"
