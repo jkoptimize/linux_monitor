@@ -14,26 +14,29 @@ ARCH ?= $(shell uname -m | sed 's/x86_64/x86/' \
 			 | sed 's/riscv64/riscv/' \
 			 | sed 's/loongarch64/loongarch/')
 VMLINUX := ./vmlinux.h/include/$(ARCH)/vmlinux.h
-# Use our own libbpf API headers and Linux UAPI headers distributed with
-# libbpf to avoid dependency on system-wide headers, which could be missing or
-# outdated
+
 INCLUDES := -I$(OUTPUT) -I./libbpf/include/uapi -I$(dir $(VMLINUX))
 CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
-# APPS = cpu_softirq_monitor mem_monitor net_monitor
-APPS = cpu_softirq_monitor net_monitor  cpu_stat_monitor
+GO ?= go
+
+# C 应用程序（如果需要的话）
+APPS = cpu_softirq_monitor cpu_stat_monitor net_monitor
+
+# Go 应用程序
+GO_APP = monitor
+GO_MAIN := ../../agent/main.go ../../agent/config.go
+
+# C 包装器源文件（用于 Go CGO）
+C_WRAPPER_SRCS = cpu_softirq_monitor.c
+C_WRAPPER_OBJS = $(addprefix $(OUTPUT)/, $(C_WRAPPER_SRCS:.c=.o))
+
+# 共享库（改为动态库）
+C_SHARED_LIB = $(abspath $(OUTPUT)/libmonitor.so)
 
 
-
-# Get Clang's default includes on this system. We'll explicitly add these dirs
-# to the includes list when compiling with `-target bpf` because otherwise some
-# architecture-specific dirs will be "missing" on some architectures/distros -
-# headers such as asm/types.h, asm/byteorder.h, asm/socket.h, asm/sockios.h,
-# sys/cdefs.h etc. might be missing.
-#
-# Use '-idirafter': Don't interfere with include mechanics except where the
-# build would have failed anyways.
+# Get Clang's default includes on this system.
 CLANG_BPF_SYS_INCLUDES ?= $(shell $(CLANG) -v -E - </dev/null 2>&1 \
 	| sed -n '/<...> search starts here:/,/End of search list./{ s| \(/.*\)|-idirafter \1|p }')
 
@@ -59,12 +62,15 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(APPS)
+all: $(C_SHARED_LIB) build-go  # 主要构建共享库和 Go 程序
+
+.PHONY: apps
+apps: $(APPS)  # 可选：构建 C 应用程序
 
 .PHONY: clean
 clean:
 	$(call msg,CLEAN)
-	$(Q)rm -rf $(OUTPUT) $(APPS)
+	$(Q)rm -rf $(OUTPUT) $(APPS) $(GO_APP)
 
 $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)
@@ -83,7 +89,6 @@ $(BPFTOOL): | $(BPFTOOL_OUTPUT)
 	$(call msg,BPFTOOL,$@)
 	$(Q)$(MAKE) ARCH= CROSS_COMPILE= OUTPUT=$(BPFTOOL_OUTPUT)/ -C $(BPFTOOL_SRC) bootstrap
 
-
 # Build BPF code
 $(OUTPUT)/%.bpf.o: %.bpf.c $(LIBBPF_OBJ) $(wildcard %.h) $(VMLINUX) | $(OUTPUT) $(BPFTOOL)
 	$(call msg,BPF,$@)
@@ -97,18 +102,34 @@ $(OUTPUT)/%.skel.h: $(OUTPUT)/%.bpf.o | $(OUTPUT) $(BPFTOOL)
 	$(call msg,GEN-SKEL,$@)
 	$(Q)$(BPFTOOL) gen skeleton $< > $@
 
-# Build user-space code
+# Build C wrapper objects (用于 Go CGO)
+$(C_WRAPPER_OBJS): $(OUTPUT)/%.o: %.c $(wildcard %.h) | $(OUTPUT)
+	$(call msg,CC,$@)
+	$(Q)$(CC) $(CFLAGS) $(INCLUDES) -c $(filter %.c,$^) -o $@
+
+# Build shared library for Go CGO
+$(C_SHARED_LIB): $(C_WRAPPER_OBJS) | $(OUTPUT)
+	$(call msg,SO,$@)
+	$(Q)$(CC) -shared -o $@ $(C_WRAPPER_OBJS)
+
+# Build user-space code for C apps (可选)
 $(patsubst %,$(OUTPUT)/%.o,$(APPS)): %.o: %.skel.h
 
 $(OUTPUT)/%.o: %.c $(wildcard %.h) | $(OUTPUT)
 	$(call msg,CC,$@)
 	$(Q)$(CC) $(CFLAGS) $(INCLUDES) -c $(filter %.c,$^) -o $@
 
-
-# Build application binary
+# Build C application binary (可选)
 $(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) | $(OUTPUT)
 	$(call msg,BINARY,$@)
-	$(Q)$(CC) $(CFLAGS) $^ $(ALL_LDFLAGS) -lelf -lz -o $@
+	$(Q)$(CC) $(CFLAGS) $< $(LIBBPF_OBJ) $(ALL_LDFLAGS) -lelf -lz -o $@
+
+# Build Go object
+build-go: $(GO_MAIN) $(C_SHARED_LIB) $(LIBBPF_OBJ)
+	$(call msg,GO,$(GO_APP))
+	$(Q)CGO_CFLAGS="$(INCLUDES)" \
+		CGO_LDFLAGS="-L$(OUTPUT) -lmonitor $(LIBBPF_OBJ) -lelf -lz" \
+		$(GO) build -o $(GO_APP) $(GO_MAIN)
 
 # delete failed targets
 .DELETE_ON_ERROR:

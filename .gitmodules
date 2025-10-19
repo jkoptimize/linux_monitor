@@ -1,0 +1,9 @@
+[submodule "monitor/ebpf/bpftool"]
+	path = monitor/ebpf/bpftool
+	url = git@github.com:libbpf/bpftool.git
+[submodule "monitor/ebpf/libbpf"]
+	path = monitor/ebpf/libbpf
+	url = git@github.com:libbpf/libbpf.git
+[submodule "monitor/ebpf/vmlinux.h"]
+	path = monitor/ebpf/vmlinux.h
+	url = git@github.com:libbpf/vmlinux.h.git

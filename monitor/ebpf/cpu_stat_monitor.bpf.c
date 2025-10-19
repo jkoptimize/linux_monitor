@@ -20,127 +20,59 @@
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";
 
-
-struct {
-    __uint(type, BPF_MAP_TYPE_RINGBUF);
-    __uint(max_entries, 256 * 1024);
-} ringbuffer SEC(".maps");
-
-struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
-    __type(key, u64); // tid
-    __type(value, void *);
-    __uint(max_entries, 1024);
-} saved_seq_file SEC(".maps");
-
 extern struct kernel_cpustat kernel_cpustat __ksym;
 
-
-static inline int task_nice(const struct task_struct *p)
-{
-	return PRIO_TO_NICE((p)->static_prio);
-}
-
+struct {
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 1);
+    __type(key, u32);
+    __type(value, struct cpu_stat);
+} cpu_stats SEC(".maps");
 
 SEC("kprobe/account_process_tick")
 int BPF_KPROBE(kprobe_account_process_tick, struct task_struct *p, u64 cputime)
 {
-    u64 tid = bpf_get_current_pid_tgid();
+    u32 key = 0;
     int cpu = bpf_get_smp_processor_id();
-    // struct cpu_stat stat = {};
-
-    struct kernel_cpustat* ptr;
-    ptr = bpf_this_cpu_ptr(&kernel_cpustat);
-
-    struct kernel_cpustat stat = {};
-    bpf_probe_read_kernel(&stat, sizeof(stat), ptr);
-
-    bpf_printk("user:%lld nice:%lld system:%lld", stat.cpustat[0], stat.cpustat[1], stat.cpustat[2]);
-
-    // if (task_nice(p) > 0) {
-    //     stat.nice += cputime;
-    //     stat.guest_nice += cputime;
-    // } else {
-    //     stat.user += cputime;
-    //     stat.guest += cputime;
-    // }
-
+    
+    // 确保PERCPU_ARRAY中的元素存在
+    struct cpu_stat *stat = bpf_map_lookup_elem(&cpu_stats, &key);
+    if (!stat) {
+        // 如果不存在，先创建（虽然PERCPU_ARRAY通常是预分配的）
+        struct cpu_stat new_stat = {};
+        bpf_map_update_elem(&cpu_stats, &key, &new_stat, BPF_NOEXIST);
+        stat = bpf_map_lookup_elem(&cpu_stats, &key);
+        if (!stat) return 0;
+    }
+    
+    // 读取内核统计信息并更新
+    struct kernel_cpustat* ptr = bpf_this_cpu_ptr(&kernel_cpustat);
+    if (!ptr) return 0;
+    
+    struct kernel_cpustat kstat = {};
+    if (bpf_probe_read_kernel(&kstat, sizeof(kstat), ptr) < 0)
+        return 0;
+    
+    // 更新统计信息
+    stat->user = kstat.cpustat[CPUTIME_USER];
+    stat->nice = kstat.cpustat[CPUTIME_NICE];
+    stat->system = kstat.cpustat[CPUTIME_SYSTEM];
+    stat->idle = kstat.cpustat[CPUTIME_IDLE];
+    stat->iowait = kstat.cpustat[CPUTIME_IOWAIT];
+    stat->irq = kstat.cpustat[CPUTIME_IRQ];
+    stat->softirq = kstat.cpustat[CPUTIME_SOFTIRQ];
+    stat->cpu_id = cpu;
+    
+    // 发送到ringbuf
+    struct cpu_stat *sample = bpf_ringbuf_reserve(&rb, sizeof(*sample), 0);
+    if (!sample) {
+        // 处理ringbuf满的情况
+        return 0;
+    }
+    
+    *sample = *stat;
+    bpf_ringbuf_submit(sample, 0);
+    
     return 0;
 }
-
-
-// SEC("kprobe/account_steal_time")
-// int BPF_KPROBE(kprobe_account_steal_time,  u64 cputime)
-// {
-//     u64 tid = bpf_get_current_pid_tgid();
-//     int cpu = bpf_get_smp_processor_id();
-//     struct cpu_stat stat = {};
-
-//     stat.steal += cputime;
-//     return 0;
-// }
-
-// extern struct rq runqueues __ksym;
-
-// SEC("kprobe/account_idle_time")
-// int BPF_KPROBE(kprobe_account_idle_time,  u64 cputime)
-// {
-//     u64 tid = bpf_get_current_pid_tgid();
-//     int cpu = bpf_get_smp_processor_id();
-//     struct cpu_stat stat = {};
-
-//     // struct rq *rq;
-//     // rq = scx_bpf_cpu_rq(cpu);
-//     // bpf_this_cpu_ptr(&runqueues);
-
-//     // int tmp = __sync_val_compare_and_swap(&rq->nr_iowait, );
-//     if (1) {
-//         stat.iowait += cputime;
-//     } else {
-//         stat.idle += cputime;
-//     }
-//     stat.steal += cputime;
-//     return 0;
-// }
-
-// SEC("kprobe/account_user_time")
-// int BPF_KPROBE(kprobe_account_user_time, struct task_struct *p, u64 cputime)
-// {
-//     u64 tid = bpf_get_current_pid_tgid();
-//     int cpu = bpf_get_smp_processor_id();
-//     struct cpu_stat stat = {};
-
-//     if(task_nice(p) > 0) {
-//         stat.nice += cputime;
-//     } else {
-//         stat.user += cputime;
-//     }
-//     return 0;
-// }
-
-// SEC("kprobe/account_system_index_time")
-// int BPF_KPROBE(kprobe_account_system_index_time, struct task_struct *p, u64 cputime, enum cpu_usage_stat index)
-// {
-//     u64 tid = bpf_get_current_pid_tgid();
-//     int cpu = bpf_get_smp_processor_id();
-//     struct cpu_stat stat = {};
-
-//     switch(index)
-//     {
-//         case CPUTIME_SYSTEM:
-//             stat.system += cputime;
-//             break;
-//         case CPUTIME_SOFTIRQ:
-//             stat.irq += cputime;
-//             break;
-//         case CPUTIME_IRQ:
-//             stat.irq += cputime;
-//             break;
-//         default:
-//             bpf_printk("invalid index: %d", index);
-//             return 0;
-//     }
-    
-//     return 0;
-// }
 

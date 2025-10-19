@@ -19,5 +19,10 @@ struct softirq_stat {
     u64 max_time_ns;
 };
 
+int init_ebpf_programs();
+int cleanup_ebpf_programs();
+int get_softirq_map_fd();
+void print();
+
 // 软中断类型数量
 #endif  // __CPU_SOFTIRQ_MONITOR_H
