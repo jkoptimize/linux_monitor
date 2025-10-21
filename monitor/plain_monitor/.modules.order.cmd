@@ -1,0 +1,1 @@
+savedcmd_/home/syt/linux_monitor/monitor/plain_monitor/modules.order := {   echo /home/syt/linux_monitor/monitor/plain_monitor/cpu_stat_monitor_kmod.o; :; } > /home/syt/linux_monitor/monitor/plain_monitor/modules.order

@@ -1,0 +1,1 @@
+savedcmd_/home/syt/linux_monitor/monitor/plain_monitor/cpu_stat_monitor_kmod.mod := printf '%s\n'   cpu_stat_monitor_kmod.o | awk '!x[$$0]++ { print("/home/syt/linux_monitor/monitor/plain_monitor/"$$0) }' > /home/syt/linux_monitor/monitor/plain_monitor/cpu_stat_monitor_kmod.mod
