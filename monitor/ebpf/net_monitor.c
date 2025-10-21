@@ -106,3 +106,12 @@ int net_monitor_get_packetsinfo_fd()
     packetsInfo_fd = bpf_map__fd(skel->maps.packetsInfo);
     return packetsInfo_fd;
 }
+
+int main()
+{
+    init_net_monitor();
+
+    while(1){};
+
+    return 0;
+}

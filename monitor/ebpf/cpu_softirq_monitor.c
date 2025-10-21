@@ -81,3 +81,15 @@ void print() {
         }
     }
 }
+
+
+int main()
+{
+    init_ebpf_programs();
+
+    while(1){};
+
+    cleanup_ebpf_programs();
+
+    return 0;
+}

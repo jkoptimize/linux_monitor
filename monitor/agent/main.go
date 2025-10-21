@@ -22,8 +22,14 @@ var (
 )
 
 func main() {
-    log.Printf("Starting eBPF Monitoring Exporter %s", version)
-    
+    // log.Printf("Starting eBPF Monitoring Exporter %s", version)
+    // logFile, err := os.OpenFile("monitor.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+    // if err != nil {
+    //     log.Fatalf("无法打开日志文件: %v", err)
+    // }
+    // defer logFile.Close()
+    // log.SetOutput(logFile)
+
     // 加载配置
     cfg := LoadConfig()
     
@@ -58,21 +64,29 @@ func main() {
     // }
 
     // 定期更新指标
-    go func() {
+    // go func() {
         ticker := time.NewTicker(10 * time.Second)
         defer ticker.Stop()
-        metricsUpdater, _ := exporter.NewMetricUpdater();
-        
+        metricsUpdater, err := exporter.NewMetricUpdater();
+        if err != nil {
+            log.Fatalf("Failed to NewMetricUpdater: %v", err)
+        }
 
         for {
             select {
             case <-ticker.C:
                 if err := metricsUpdater.UpdateSoftirqMetrics(); err != nil {
-                    log.Printf("Failed to update metrics: %v", err)
+                    log.Printf("Failed to update Softirq metrics: %v", err)
                 }
+                if err := metricsUpdater.UpdateCpuStatMetrics(); err != nil {
+                    log.Printf("Failed to update CpuStat metrics: %v", err)
+                }
+                // if err := metricsUpdater.UpdateTrafficMetrics(); err != nil {
+                //     log.Printf("Failed to update Traffic metrics: %v", err)
+                // }
             }
         }
-    }()
+    // }()
     
     // // 设置指标更新回调
     // metricUpdater := exporter.NewMetricUpdater()

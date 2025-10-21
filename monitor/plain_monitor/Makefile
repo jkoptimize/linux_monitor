@@ -155,6 +155,32 @@ mem_monitor/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/mem_monitor.dir/build.make CMakeFiles/mem_monitor.dir/build
 .PHONY : mem_monitor/fast
 
+#=============================================================================
+# Target rules for targets named cpu_stat_monitor_kmod_module
+
+# Build rule for target.
+cpu_stat_monitor_kmod_module: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 cpu_stat_monitor_kmod_module
+.PHONY : cpu_stat_monitor_kmod_module
+
+# fast build rule for target.
+cpu_stat_monitor_kmod_module/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/cpu_stat_monitor_kmod_module.dir/build.make CMakeFiles/cpu_stat_monitor_kmod_module.dir/build
+.PHONY : cpu_stat_monitor_kmod_module/fast
+
+#=============================================================================
+# Target rules for targets named modules
+
+# Build rule for target.
+modules: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 modules
+.PHONY : modules
+
+# fast build rule for target.
+modules/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/modules.dir/build.make CMakeFiles/modules.dir/build
+.PHONY : modules/fast
+
 cpu_load_monitor.o: cpu_load_monitor.c.o
 .PHONY : cpu_load_monitor.o
 
@@ -307,6 +333,8 @@ help:
 	@echo "... depend"
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
+	@echo "... cpu_stat_monitor_kmod_module"
+	@echo "... modules"
 	@echo "... cpu_load_monitor"
 	@echo "... disk_monitor"
 	@echo "... mem_monitor"

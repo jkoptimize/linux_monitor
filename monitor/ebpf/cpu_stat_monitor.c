@@ -47,3 +47,12 @@ int get_cpustats_map_fd()
     cpustats_map_fd = bpf_map__fd(skel->maps.cpu_stats);
     return cpustats_map_fd;
 }
+
+int main()
+{
+    init_cpu_stat_monitor();
+
+    while(1){};
+
+    return 0;
+}

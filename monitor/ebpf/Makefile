@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause)
 OUTPUT := .output
+# GO_OUTPUT := $(abspath ./)
 CLANG ?= clang
 LIBBPF_SRC := $(abspath ./libbpf/src)
 BPFTOOL_SRC := $(abspath ./bpftool/src)
@@ -19,20 +20,15 @@ INCLUDES := -I$(OUTPUT) -I./libbpf/include/uapi -I$(dir $(VMLINUX))
 CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
-GO ?= go
-
 # C 应用程序（如果需要的话）
 APPS = cpu_softirq_monitor cpu_stat_monitor net_monitor
 
-# Go 应用程序
+
+GO ?= go
 GO_APP = monitor
 GO_MAIN := ../agent/main.go ../agent/config.go
-
-# C 包装器源文件（用于 Go CGO）
-C_WRAPPER_SRCS = cpu_softirq_monitor.c cpu_stat_monitor.c net_monitor.c
+C_WRAPPER_SRCS = net_monitor.c
 C_WRAPPER_OBJS = $(addprefix $(OUTPUT)/, $(C_WRAPPER_SRCS:.c=.o))
-
-# 共享库（改为动态库）
 C_SHARED_LIB = $(abspath $(OUTPUT)/libmonitor.so)
 
 
@@ -62,15 +58,12 @@ $(call allow-override,CC,$(CROSS_COMPILE)cc)
 $(call allow-override,LD,$(CROSS_COMPILE)ld)
 
 .PHONY: all
-all: $(C_SHARED_LIB) build-go  # 主要构建共享库和 Go 程序
-
-.PHONY: apps
-apps: $(APPS)  # 可选：构建 C 应用程序
+all: $(APPS) build-go # 可选：构建 C 应用程序
 
 .PHONY: clean
 clean:
 	$(call msg,CLEAN)
-	$(Q)rm -rf $(OUTPUT) $(APPS) $(GO_APP)
+	$(Q)rm -rf $(OUTPUT) $(APPS)
 
 $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)
@@ -89,13 +82,18 @@ $(BPFTOOL): | $(BPFTOOL_OUTPUT)
 	$(call msg,BPFTOOL,$@)
 	$(Q)$(MAKE) ARCH= CROSS_COMPILE= OUTPUT=$(BPFTOOL_OUTPUT)/ -C $(BPFTOOL_SRC) bootstrap
 
-# Build BPF code
+
+
+# 在构建 OUTPUT bpf.o 后自动触发复制
 $(OUTPUT)/%.bpf.o: %.bpf.c $(LIBBPF_OBJ) $(wildcard %.h) $(VMLINUX) | $(OUTPUT) $(BPFTOOL)
 	$(call msg,BPF,$@)
-	$(Q)$(CLANG) -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH)		      \
-		     $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES)		      \
+	$(Q)$(CLANG) -g -O2 -target bpf -D__TARGET_ARCH_$(ARCH) \
+		     $(INCLUDES) $(CLANG_BPF_SYS_INCLUDES) \
 		     -c $(filter %.c,$^) -o $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
 	$(Q)$(BPFTOOL) gen object $@ $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
+# 	$(Q)rm -f $(patsubst %.bpf.o,%.tmp.bpf.o,$@)
+# 	$(Q)cp $@ $(GO_OUTPUT)/$(notdir $@)
+
 
 # Generate BPF skeletons
 $(OUTPUT)/%.skel.h: $(OUTPUT)/%.bpf.o | $(OUTPUT) $(BPFTOOL)
@@ -124,13 +122,13 @@ $(APPS): %: $(OUTPUT)/%.o $(LIBBPF_OBJ) | $(OUTPUT)
 	$(call msg,BINARY,$@)
 	$(Q)$(CC) $(CFLAGS) $< $(LIBBPF_OBJ) $(ALL_LDFLAGS) -lelf -lz -o $@
 
+
 # Build Go object
 build-go: $(GO_MAIN) $(C_SHARED_LIB) $(LIBBPF_OBJ)
 	$(call msg,GO,$(GO_APP))
 	$(Q)CGO_CFLAGS="$(INCLUDES)" \
 		CGO_LDFLAGS="-L$(OUTPUT) -lmonitor $(LIBBPF_OBJ) -lelf -lz" \
-		$(GO) build -o $(GO_APP) $(GO_MAIN)
-
+		$(GO) build -gcflags "-N -l" -ldflags "-s" -o $(GO_APP) $(GO_MAIN)
 # delete failed targets
 .DELETE_ON_ERROR:
 

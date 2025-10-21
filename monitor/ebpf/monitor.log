@@ -1,0 +1,31 @@
+2025/10/21 01:14:07 eBPF monitoring system is fully operational
+2025/10/21 01:14:07 Starting Prometheus exporter on :8080
+2025/10/21 01:14:07 Metrics available at http://:8080/metrics
+2025/10/21 01:14:17 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:14:27 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:14:37 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:14:47 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:14:57 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:14:58 Received signal interrupt, initiating shutdown...
+2025/10/21 01:14:58 Shutting down Prometheus exporter...
+2025/10/21 01:14:58 Prometheus exporter stopped
+2025/10/21 01:14:58 Shutdown completed
+2025/10/21 01:15:05 eBPF monitoring system is fully operational
+2025/10/21 01:15:05 Starting Prometheus exporter on :8080
+2025/10/21 01:15:05 Metrics available at http://:8080/metrics
+2025/10/21 01:15:15 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:15:25 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:15:35 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:15:45 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:15:55 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:16:05 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:16:15 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:16:25 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:16:35 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:16:45 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:16:55 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:17:05 Failed to update metrics: MetricUpdater为nil
+2025/10/21 01:17:06 Received signal interrupt, initiating shutdown...
+2025/10/21 01:17:06 Shutting down Prometheus exporter...
+2025/10/21 01:17:06 Prometheus exporter stopped
+2025/10/21 01:17:06 Shutdown completed
