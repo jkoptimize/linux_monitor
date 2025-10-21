@@ -42,7 +42,7 @@ build_library(mem_monitor ${MEM_MONITOR_SOURCES})
 set(KERNEL_MODULES
     cpu_stat_monitor_kmod
 )
-set(CUSTOM_KERNEL_DIR "/root/WSL2-Linux-Kernel-linux-msft-wsl-6.6.87.2")
+set(CUSTOM_KERNEL_DIR "/lib/modules/6.8.0-85-generic/build")
 
 # 定义内核模块的构建目标
 set(MODULE_TARGETS)

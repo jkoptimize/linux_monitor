@@ -1,0 +1,7 @@
+/home/syt/linux_monitor/monitor/plain_monitor/build/CMakeFiles/cpu_load_monitor.dir
+/home/syt/linux_monitor/monitor/plain_monitor/build/CMakeFiles/disk_monitor.dir
+/home/syt/linux_monitor/monitor/plain_monitor/build/CMakeFiles/mem_monitor.dir
+/home/syt/linux_monitor/monitor/plain_monitor/build/CMakeFiles/cpu_stat_monitor_kmod_module.dir
+/home/syt/linux_monitor/monitor/plain_monitor/build/CMakeFiles/modules.dir
+/home/syt/linux_monitor/monitor/plain_monitor/build/CMakeFiles/edit_cache.dir
+/home/syt/linux_monitor/monitor/plain_monitor/build/CMakeFiles/rebuild_cache.dir

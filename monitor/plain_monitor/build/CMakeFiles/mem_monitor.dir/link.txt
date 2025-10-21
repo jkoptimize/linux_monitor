@@ -1,0 +1,1 @@
+/usr/bin/cc CMakeFiles/mem_monitor.dir/mem_monitor.c.o CMakeFiles/mem_monitor.dir/mem_monitor_main.c.o -o mem_monitor 

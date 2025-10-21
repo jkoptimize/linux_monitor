@@ -1,0 +1,1 @@
+savedcmd_/home/syt/linux_monitor/monitor/plain_monitor/cpu_stat_monitor_kmod.ko := ld -r -m elf_x86_64 -z noexecstack --build-id=sha1  -T scripts/module.lds -o /home/syt/linux_monitor/monitor/plain_monitor/cpu_stat_monitor_kmod.ko /home/syt/linux_monitor/monitor/plain_monitor/cpu_stat_monitor_kmod.o /home/syt/linux_monitor/monitor/plain_monitor/cpu_stat_monitor_kmod.mod.o

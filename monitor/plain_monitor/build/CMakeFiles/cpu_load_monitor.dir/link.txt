@@ -1,0 +1,1 @@
+/usr/bin/cc CMakeFiles/cpu_load_monitor.dir/cpu_load_monitor.c.o CMakeFiles/cpu_load_monitor.dir/cpu_load_monitor_main.c.o -o cpu_load_monitor 
