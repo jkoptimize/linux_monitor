@@ -9,11 +9,11 @@ struct kernel_cpustat {
     unsigned long long cpustat[10];
 };
 static struct cpu_stat_monitor_bpf *skel;
-static int cpustats_map_fd = 0;
+static int cpustats_map_fd = -1;
 
 int init_cpu_stat_monitor() 
 {
-    int err, map_fd;
+    int err = 0, map_fd;
     int key = 0;
 
     // 打开BPF程序
@@ -37,6 +37,7 @@ int init_cpu_stat_monitor()
         goto cleanup;
     }
     
+    return 0;
 cleanup:
     cpu_stat_monitor_bpf__destroy(skel);
     return err;
@@ -48,11 +49,11 @@ int get_cpustats_map_fd()
     return cpustats_map_fd;
 }
 
-int main()
-{
-    init_cpu_stat_monitor();
+// int main()
+// {
+//     init_cpu_stat_monitor();
 
-    while(1){};
+//     while(1){};
 
-    return 0;
-}
+//     return 0;
+// }

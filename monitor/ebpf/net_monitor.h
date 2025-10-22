@@ -12,8 +12,8 @@ typedef unsigned long long __u64;
 struct ip_packet_info {
     __u64 snd_rcv_bytes;
     __u64 snd_rcv_packets;
-    __u64 err_in_out;
-    __u64 drop_in_out;
+    // __u64 err_in_out;
+    // __u64 drop_in_out;
 };
 
 int init_net_monitor();

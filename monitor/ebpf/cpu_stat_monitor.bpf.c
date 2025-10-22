@@ -22,17 +22,17 @@ char LICENSE[] SEC("license") = "Dual BSD/GPL";
 extern struct kernel_cpustat kernel_cpustat __ksym;
 
 struct {
-    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-    __uint(max_entries, 1);
+    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(max_entries, 64);
     __type(key, u32);
     __type(value, struct cpu_stat);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } cpu_stats SEC(".maps");
 
 SEC("kprobe/account_process_tick")
 int BPF_KPROBE(kprobe_account_process_tick, struct task_struct *p, u64 cputime)
 {
-    u32 key = 0;
-    int cpu = bpf_get_smp_processor_id();
+    u32 key = bpf_get_smp_processor_id();
     
     // 确保PERCPU_ARRAY中的元素存在
     struct cpu_stat *stat = bpf_map_lookup_elem(&cpu_stats, &key);
@@ -45,7 +45,7 @@ int BPF_KPROBE(kprobe_account_process_tick, struct task_struct *p, u64 cputime)
     }
     
     // 读取内核统计信息并更新
-    struct kernel_cpustat* ptr = bpf_this_cpu_ptr(&kernel_cpustat);
+    struct kernel_cpustat* ptr = (struct kernel_cpustat*)bpf_this_cpu_ptr(&kernel_cpustat);
     if (!ptr) return 0;
     
     struct kernel_cpustat kstat = {};
@@ -63,7 +63,7 @@ int BPF_KPROBE(kprobe_account_process_tick, struct task_struct *p, u64 cputime)
     stat->steal = kstat.cpustat[CPUTIME_STEAL];
     stat->guest = kstat.cpustat[CPUTIME_GUEST];
     stat->guest_nice = kstat.cpustat[CPUTIME_GUEST_NICE];
-    bpf_trace_printk("%d %d %d", stat->user, stat->nice, stat->system);
+    bpf_printk("%d %d %d", stat->user, stat->nice, stat->system);
     
     return 0;
 }

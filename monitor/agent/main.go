@@ -52,19 +52,8 @@ func main() {
         log.Fatalf("Failed to start exporter: %v", err)
     }
     
-    // // 初始化eBPF监控
-    // ebpfManager, err := ebpf.NewEBPFManager(cfg.NodeName)
-    // if err != nil {
-    //     log.Fatalf("Failed to initialize eBPF manager: %v", err)
-    // }
-    
-    // // 启动eBPF数据收集
-    // if err := ebpfManager.Start(); err != nil {
-    //     log.Fatalf("Failed to start eBPF manager: %v", err)
-    // }
-
     // 定期更新指标
-    // go func() {
+    go func() {
         ticker := time.NewTicker(10 * time.Second)
         defer ticker.Stop()
         metricsUpdater, err := exporter.NewMetricUpdater();
@@ -76,21 +65,18 @@ func main() {
             select {
             case <-ticker.C:
                 if err := metricsUpdater.UpdateSoftirqMetrics(); err != nil {
-                    log.Printf("Failed to update Softirq metrics: %v", err)
+                    log.Printf("Failed to update Softirq metrics: ", err)
                 }
                 if err := metricsUpdater.UpdateCpuStatMetrics(); err != nil {
-                    log.Printf("Failed to update CpuStat metrics: %v", err)
+                    log.Printf("Failed to update CpuStat metrics: ", err)
                 }
-                // if err := metricsUpdater.UpdateTrafficMetrics(); err != nil {
-                //     log.Printf("Failed to update Traffic metrics: %v", err)
-                // }
+                if err := metricsUpdater.UpdateTrafficMetrics(); err != nil {
+                    log.Printf("Failed to update Traffic metrics: ", err)
+                }
             }
         }
-    // }()
-    
-    // // 设置指标更新回调
-    // metricUpdater := exporter.NewMetricUpdater()
-    // ebpfManager.SetMetricUpdater(metricUpdater)
+    }()
+
     
     log.Println("eBPF monitoring system is fully operational")
     
@@ -108,11 +94,6 @@ func waitForShutdown(export *exporter.EBPFExporter) {
     // 优雅关闭
     _, cancel := context.WithTimeout(context.Background(), 30*time.Second)
     defer cancel()
-    
-    // // 停止eBPF监控
-    // if err := ebpfManager.Stop(); err != nil {
-    //     log.Printf("Error stopping eBPF manager: %v", err)
-    // }
     
     // 停止exporter
     if err := export.Stop(); err != nil {

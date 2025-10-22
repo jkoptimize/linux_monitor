@@ -17,6 +17,7 @@ struct cpu_stat {
     long long guest_nice;
 };
 
-
+int init_cpu_stat_monitor();
+int get_cpustats_map_fd();
 
 #endif /* __BOOTSTRAP_H */

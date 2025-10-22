@@ -14,6 +14,7 @@ struct {
     __uint(max_entries, 2);
     __type(key, u32);
     __type(value, struct ip_packet_info);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } packetsInfo SEC(".maps");
 
 
@@ -51,9 +52,7 @@ int tc_ingress(struct __sk_buff *ctx)
         struct ip_packet_info info = {};
         info.snd_rcv_bytes = ctx->len;
         info.snd_rcv_packets = 1;
-        info.err_in_out = 0;
-        info.drop_in_out = 0;
-        bpf_map_update_elem(&packetsInfo, &key, &info, BPF_ANY);
+        bpf_map_update_elem(&packetsInfo, &key, &info, BPF_NOEXIST);
     }
 
 	return TC_ACT_OK;
@@ -94,12 +93,9 @@ int tc_egress(struct __sk_buff *ctx)
         struct ip_packet_info info = {};
         info.snd_rcv_bytes = ctx->len;
         info.snd_rcv_packets = 1;
-        info.err_in_out = 0;
-        info.drop_in_out = 0;
-        bpf_map_update_elem(&packetsInfo, &key, &info, BPF_ANY);
+        bpf_map_update_elem(&packetsInfo, &key, &info, BPF_NOEXIST);
     }
 
 	return TC_ACT_OK;
 }
-
 

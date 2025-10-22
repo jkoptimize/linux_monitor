@@ -18,16 +18,21 @@ var SoftirqNames = []string{
 }
 
 var CpuStatsNames = []string{
-    "user",        // 0
-    "nice",     // 1
-    "system",    // 2
-    "idle",    // 3
-    "iowait",     // 4
-    "irq",  // 5
-    "softirq",   // 6
-    "steal",     // 7
-    "guest",   // 8
-    "guest_nice",       // 9
+    "User",        // 0
+    "Nice",     // 1
+    "System",    // 2
+    "Idle",    // 3
+    "Iowait",     // 4
+    "Irq",  // 5
+    "Softirq",   // 6
+    "Steal",     // 7
+    "Guest",   // 8
+    "Guest_nice",       // 9
+}
+
+var ipPacketNames = []string{
+    "Snd_rcv_bytes",        // 0
+    "Snd_rcv_packets",     // 1
 }
 
 type SoftirqStat struct {
@@ -37,23 +42,21 @@ type SoftirqStat struct {
 }
 
 type ip_packet_info struct {
-     snd_rcv_bytes uint64
-     snd_rcv_packets uint64
-     err_in_out uint64
-     drop_in_out uint64
+     Snd_rcv_bytes uint64
+     Snd_rcv_packets uint64
 }
 
 type cpu_stat struct {
-     user   uint64
-     nice   uint64
-     system   uint64
-     idle   uint64
-     iowait   uint64
-     irq   uint64
-     softirq   uint64
-     steal   uint64
-     guest   uint64
-     guest_nice   uint64
+     User   uint64
+     Nice   uint64
+     System   uint64
+     Idle   uint64
+     Iowait   uint64
+     Irq   uint64
+     Softirq   uint64
+     Steal   uint64
+     Guest   uint64
+     Guest_nice   uint64
 }
 
 // // NetworkData 网络事件

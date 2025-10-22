@@ -17,7 +17,7 @@ struct {
     __uint(max_entries, 256);
     __type(key, u32); // vec (softirq number)
     __type(value, struct softirq_stat);
-     __uint(pinning, LIBBPF_PIN_BY_NAME);
+    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } softirq_stats SEC(".maps");
 
 // 挂载点：软中断处理开始

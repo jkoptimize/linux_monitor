@@ -27,7 +27,7 @@ APPS = cpu_softirq_monitor cpu_stat_monitor net_monitor
 GO ?= go
 GO_APP = monitor
 GO_MAIN := ../agent/main.go ../agent/config.go
-C_WRAPPER_SRCS = net_monitor.c
+C_WRAPPER_SRCS = net_monitor.c  cpu_stat_monitor.c
 C_WRAPPER_OBJS = $(addprefix $(OUTPUT)/, $(C_WRAPPER_SRCS:.c=.o))
 C_SHARED_LIB = $(abspath $(OUTPUT)/libmonitor.so)
 
@@ -63,8 +63,8 @@ all: $(APPS) build-go # 可选：构建 C 应用程序
 .PHONY: clean
 clean:
 	$(call msg,CLEAN)
-	$(Q)rm -rf $(OUTPUT) $(APPS)
-
+	$(Q)rm -rf $(OUTPUT) $(APPS) $(GO_APP)
+	
 $(OUTPUT) $(OUTPUT)/libbpf $(BPFTOOL_OUTPUT):
 	$(call msg,MKDIR,$@)
 	$(Q)mkdir -p $@
@@ -128,7 +128,7 @@ build-go: $(GO_MAIN) $(C_SHARED_LIB) $(LIBBPF_OBJ)
 	$(call msg,GO,$(GO_APP))
 	$(Q)CGO_CFLAGS="$(INCLUDES)" \
 		CGO_LDFLAGS="-L$(OUTPUT) -lmonitor $(LIBBPF_OBJ) -lelf -lz" \
-		$(GO) build -gcflags "-N -l" -ldflags "-s" -o $(GO_APP) $(GO_MAIN)
+		$(GO) build -o $(GO_APP) $(GO_MAIN)
 # delete failed targets
 .DELETE_ON_ERROR:
 

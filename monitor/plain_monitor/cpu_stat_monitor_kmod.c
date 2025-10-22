@@ -27,11 +27,11 @@
 #define MAX_CPU 128
 
 struct cpu_stat {
-    char cpu_name[16];
+    // char cpu_name[16];
     u64 user;
+    u64 nice;
     u64 system;
     u64 idle;
-    u64 nice;
     u64 io_wait;
     u64 irq;
     u64 soft_irq;
@@ -47,13 +47,14 @@ static ktime_t ktime;
 
 
 static void update_cpu_stats(struct cpu_stat *stats) {
+    static int times = 0;
     int cpu;
     for (cpu = 0; cpu < MAX_CPU; ++cpu) {
         if (!cpu_online(cpu)) {
-            stats[cpu].cpu_name[0] = '\0';
+            // stats[cpu].cpu_name[0] = '\0';
             continue;
         }
-        snprintf(stats[cpu].cpu_name, sizeof(stats[cpu].cpu_name), "cpu%d", cpu);
+        // snprintf(stats[cpu].cpu_name, sizeof(stats[cpu].cpu_name), "cpu%d", cpu);
         u64 *stat = kcpustat_cpu(cpu).cpustat;
         stats[cpu].user = stat[CPUTIME_USER];
         stats[cpu].nice = stat[CPUTIME_NICE];
@@ -65,6 +66,9 @@ static void update_cpu_stats(struct cpu_stat *stats) {
         stats[cpu].steal = stat[CPUTIME_STEAL];
         stats[cpu].guest = stat[CPUTIME_GUEST];
         stats[cpu].guest_nice = stat[CPUTIME_GUEST_NICE];
+
+        printk(KERN_INFO "cpu_stat_monitor: CPU0 user=%llu, nice=%llu\n", 
+            stats[0].user, stats[0].nice);
     }
 }
 
@@ -75,13 +79,17 @@ static enum hrtimer_restart cpu_stat_timer_callback(struct hrtimer *timer)
     return HRTIMER_RESTART;
 }
 
+//vmalloc分配的是虚拟地址连续的大块内存，物理地址并不连续，内核通过修改页表，将虚拟地址拼接连续
+//virt_to_phys只能转换kmalloc等分配在直接映射区的内存地址，不能用于vmalloc或者zmalloc
+//remap_pfn_range作用是将一段连续物理内存映射至用户空间的虚拟地址
+//因此，virt_to_phys这里返回了失效虚拟地址，remap_pfn_range将其映射给了go，go是从无效地址读取数据
 static int cpu_stat_monitor_mmap(struct file *filp, struct vm_area_struct *vma) {
     unsigned long size = sizeof(struct cpu_stat) * MAX_CPU;
     if ((vma->vm_end - vma->vm_start) < size)
         return -EINVAL;
     // 移除 update_cpu_stats 调用,因为定时器会定期更新
     return remap_pfn_range(vma, vma->vm_start,
-                           virt_to_phys((void *)g_cpu_stats) >> PAGE_SHIFT,
+                           virt_to_phys((void *)g_cpu_stats) >> PAGE_SHIFT,                
                            size, vma->vm_page_prot);
 }
 
@@ -98,7 +106,7 @@ static struct miscdevice cpu_stat_monitor_dev = {
 };
 
 static int __init cpu_stat_monitor_init(void) {
-    g_cpu_stats = vzalloc(sizeof(struct cpu_stat) * MAX_CPU);
+    g_cpu_stats = kzalloc(sizeof(struct cpu_stat) * MAX_CPU, GFP_KERNEL);
     if (!g_cpu_stats)
         return -ENOMEM;
     
@@ -117,7 +125,7 @@ static void __exit cpu_stat_monitor_exit(void) {
     hrtimer_cancel(&cpu_stat_timer);
     misc_deregister(&cpu_stat_monitor_dev);
     if (g_cpu_stats)
-        vfree(g_cpu_stats);
+        kfree(g_cpu_stats); // 使用 kfree 替代 vfree
     printk(KERN_INFO "cpu_stat_monitor device unregistered\n");
 }
 
