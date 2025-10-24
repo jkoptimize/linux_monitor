@@ -17,6 +17,11 @@ var SoftirqNames = []string{
     "RCU",       // 9
 }
 
+var TrafficNames = []string{
+    "ingress",
+    "egress",
+}
+
 var CpuStatsNames = []string{
     "User",        // 0
     "Nice",     // 1
@@ -30,9 +35,9 @@ var CpuStatsNames = []string{
     "Guest_nice",       // 9
 }
 
-var ipPacketNames = []string{
-    "Snd_rcv_bytes",        // 0
-    "Snd_rcv_packets",     // 1
+type SoftirqKey struct {
+    Cpu uint32
+    Vec uint32
 }
 
 type SoftirqStat struct {
@@ -47,6 +52,7 @@ type ip_packet_info struct {
 }
 
 type cpu_stat struct {
+     Online uint64
      User   uint64
      Nice   uint64
      System   uint64
@@ -59,59 +65,6 @@ type cpu_stat struct {
      Guest_nice   uint64
 }
 
-// // NetworkData 网络事件
-// type NetworkDatastruct struct {
-//     timestamp		time.Time	`json:"timestamp"` // 时间戳
-//     node_name		string		`json:"node_name"` // 节点名称
-//     snd_rcv_bytes		uint64	`json:"snd_rcv_bytes"`
-//     snd_rcv_packets		uint64	`json:"snd_rcv_packets"`
-// }
-
-// // SoftIRQData 软中断事件
-// type SoftIRQData struct {
-//     timestamp		time.Time	`json:"timestamp"` // 时间戳
-//     node_name		string		`json:"node_name"` // 节点名称
-// 	HI				float64		`json:"HI"` // High-priority tasklets，高优先级任务软中断
-// 	TIMER			float64		`json:"TIMER"` // 定时器软中断
-// 	NET_TX			float64		`json:"NET_TX"` // 网卡发送软中断
-// 	NET_RX			float64		`json:"NET_RX"` // 网卡接收软中断
-// 	BLOCK			float64		`json:"BLOCK"` // 块设备IO软中断
-// 	IRQ_POLL		float64		`json:"IRQ_POLL"` // Interrupt polling softirq，NAPI（New API）网络轮询中断
-// 	TASKLET			float64		`json:"TASKLET"` // tasklets，普通优先级任务软中断
-// 	SCHED			float64		`json:"SCHED"` // 调度相关的软中断
-// 	HRTIMER			float64		`json:"HRTIMER"` // 高精度定时器软中断
-// 	RCU				float64		`json:"RCU"` // RCU 机制的回调处理
-// }
-
-// // HardIRQEvent 硬中断事件
-// type HardIRQEvent struct {
-//     Timestamp time.Time `json:"timestamp"` // 时间戳
-//     IRQNumber uint32    `json:"irq_number"` // 中断号
-//     CPU       string    `json:"cpu"`       // CPU核心
-//     Device    string    `json:"device"`    // 设备名称
-//     Count     uint64    `json:"count"`     // 中断次数
-//     Latency   uint64    `json:"latency"`   // 处理延迟（纳秒）
-//     NodeName  string    `json:"node_name"` // 节点名称
-// }
-
-// type PerCPUData struct {
-//     user_time		float64   `json:"user_time"`   // 用户态时间
-// 	nice_time		float64   `json:"nice_time"`   // nice进程时间
-//     system_time		float64   `json:"system_time"` // 系统态时间
-//     idle_time		float64   `json:"idle_time"`   // 空闲率
-//     iowait_time		float64   `json:"iowait_time"` // IO等待率
-//     steal_time		float64   `json:"steal_time"`  // 窃取时间（虚拟化）
-// 	guest_time		float64   `json:"guest_time"`  // 运行虚拟机时间（虚拟化）
-// 	guest_nic_time	float64   `json:"guest_nic_time"`	//运行低优先级虚拟机时间 (虚拟化)
-// }
-
-// // CPUUsageData CPU使用率数据
-// type CPUUsageData struct {
-//     timestamp		time.Time `json:"timestamp"`      // 时间戳
-//     node_name		string    `json:"node_name"`      // 节点名称
-// 	core_list			[]uint32    `json:"core_list"`		// CPU核心编号
-// 	per_cpu_data		[]PerCPUData `json:"per_cpu_data"`    // CPU核心数据
-// }
 
 /*   统计类型指标   */
 // CPULoadData CPU负载数据

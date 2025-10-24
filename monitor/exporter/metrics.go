@@ -15,15 +15,23 @@ import (
     "encoding/binary"
     "strconv"
     "syscall"
-    "reflect"
+    _ "reflect"
     "unsafe"
+    "math"
 
     "github.com/cilium/ebpf"
     "github.com/cilium/ebpf/link"
     "github.com/cilium/ebpf/rlimit"
-
     "github.com/prometheus/client_golang/prometheus"
 )
+
+var buckets []float64
+// 初始化桶边界
+func init() {
+    for i := 1; i <= 24; i++ {
+        buckets = append(buckets, float64((int(1) << i) - 1))
+    }
+}
 
 // 定义所有eBPF监控指标
 var (
@@ -32,7 +40,7 @@ var (
             Name: "ebpf_cpu_stat",
             Help: "Process ebpf_cpu_stat",
         },
-        []string{"cpu_stat_type", "node"},
+        []string{"cpu_stat_type", "cpu", "node"},
     )
 
     networkTraffic = prometheus.NewGaugeVec(
@@ -42,13 +50,30 @@ var (
         },
         []string{"traffic_type", "node"},
     )
-    
+
+    SoftirqTimes = prometheus.NewGaugeVec(
+        prometheus.GaugeOpts{
+            Name: "ebpf_softirqs_operations_times",
+            Help: "software interrupt number",
+        },
+        []string{"softirq_type", "cpu", "node"}, 
+    )
+
     SoftirqNumbers = prometheus.NewGaugeVec(
         prometheus.GaugeOpts{
             Name: "ebpf_softirqs_operations_total",
             Help: "software interrupt number",
         },
-        []string{"softirq_type", "node"}, 
+        []string{"softirq_type", "cpu", "node"}, 
+    )
+
+    TcpStatMetric = prometheus.NewHistogramVec(
+        prometheus.HistogramOpts{
+            Name:    "ebpf_tcp_conn_delay",
+            Help:    "software interrupt number",
+            Buckets: buckets,
+        }, 
+        []string{"node"},// 标签维度
     )
 
     // Exporter自身指标
@@ -75,6 +100,8 @@ func createEBPFMetrics() []prometheus.Collector {
         cpuStatNumbers,
         networkTraffic,
         SoftirqNumbers,
+        SoftirqTimes,
+        TcpStatMetric,
         ExporterBuildInfo,
         ExporterScrapeDuration,
     }
@@ -85,6 +112,7 @@ type MetricUpdater struct {
     softirqMap *ebpf.Map
     cpuStatMap *ebpf.Map
     trafficMap *ebpf.Map
+    tcpStatMap *ebpf.Map
 }
 
 func NewMetricUpdater() (*MetricUpdater, error) {
@@ -105,11 +133,16 @@ func NewMetricUpdater() (*MetricUpdater, error) {
     if err != nil {
         return nil, fmt.Errorf("NewMetricUpdater失败: %v", err)
     }
+    tcpStatMap, err := attachTcpStatMonitoring()
+    if err != nil {
+        return nil, fmt.Errorf("NewTcpStatMonitoring失败: %v", err)
+    }
 
     updater := &MetricUpdater{
         softirqMap: softirqMap,
         cpuStatMap: cpuStatMap,
         trafficMap: trafficMap,
+        tcpStatMap: tcpStatMap,
     }
     
     log.Println("eBPF程序成功加载并附加到软中断tracepoints")
@@ -119,54 +152,65 @@ func NewMetricUpdater() (*MetricUpdater, error) {
 func attachSoftirqMonitoring() (*ebpf.Map, error) {
     var links []link.Link
 
-    // 编译和加载eBPF程序
-    collectionSpec, err := ebpf.LoadCollectionSpec(".output/cpu_softirq_monitor.bpf.o")
+    // Load the eBPF program specification
+    spec, err := ebpf.LoadCollectionSpec(".output/cpu_softirq_monitor.bpf.o")
     if err != nil {
-        return nil, fmt.Errorf("加载eBPF集合规范失败: %v", err)
+        return nil, fmt.Errorf("failed to load eBPF collection spec: %v", err)
     }
 
-    collection, err := ebpf.NewCollectionWithOptions(collectionSpec, ebpf.CollectionOptions{
+    // Create a new eBPF collection
+    coll, err := ebpf.NewCollectionWithOptions(spec, ebpf.CollectionOptions{
         Maps: ebpf.MapOptions{
             PinPath: "/sys/fs/bpf",
         },
     })
     if err != nil {
-        return nil, fmt.Errorf("创建eBPF集合失败: %v", err)
+        return nil, fmt.Errorf("failed to create eBPF collection: %v", err)
     }
 
-    // 附加第一个tracepoint: irq:softirq_entry
-    if prog, exists := collection.Programs["handle_softirq_entry"]; exists {
+    // Attach to the softirq_entry tracepoint
+    if prog, ok := coll.Programs["handle_softirq_entry"]; ok {
         tp, err := link.Tracepoint("irq", "softirq_entry", prog, nil)
         if err != nil {
-            return nil, fmt.Errorf("附加softirq_entry tracepoint失败: %v", err)
+            coll.Close()
+            return nil, fmt.Errorf("failed to attach to softirq_entry tracepoint: %v", err)
         }
         links = append(links, tp)
     } else {
-        return nil, fmt.Errorf("找不到 handle_softirq_entry 程序")
-    }
-    
-    // 附加第二个tracepoint: irq:softirq_exit
-    if prog, exists := collection.Programs["handle_softirq_exit"]; exists {
-        tp, err := link.Tracepoint("irq", "softirq_exit", prog, nil)
-        if err != nil {
-            return nil, fmt.Errorf("附加softirq_exit tracepoint失败: %v", err)
-        }
-        links = append(links, tp)
-    } else {
-        return nil, fmt.Errorf("找不到 handle_softirq_exit 程序")
+        coll.Close()
+        return nil, fmt.Errorf("could not find handle_softirq_entry program")
     }
 
-    hashMap, ok := collection.Maps["softirq_stats"]
-    if !ok {
-        // 关闭已创建的links
+    // Attach to the softirq_exit tracepoint
+    if prog, ok := coll.Programs["handle_softirq_exit"]; ok {
+        tp, err := link.Tracepoint("irq", "softirq_exit", prog, nil)
+        if err != nil {
+            for _, l := range links {
+                l.Close()
+            }
+            coll.Close()
+            return nil, fmt.Errorf("failed to attach to softirq_exit tracepoint: %v", err)
+        }
+        links = append(links, tp)
+    } else {
         for _, l := range links {
             l.Close()
         }
-        collection.Close()
-        return nil, fmt.Errorf("找不到softirq_stats映射")
+        coll.Close()
+        return nil, fmt.Errorf("could not find handle_softirq_exit program")
     }
 
-    return hashMap, nil
+    // Retrieve the statistics map
+    statsMap, ok := coll.Maps["softirq_stats"]
+    if !ok {
+        for _, l := range links {
+            l.Close()
+        }
+        coll.Close()
+        return nil, fmt.Errorf("could not find softirq_stats map")
+    }
+
+    return statsMap, nil
 }
 
 func attachCpuStatMonitoring() (*ebpf.Map, error) {
@@ -204,6 +248,66 @@ func attachTrafficMonitoring() (*ebpf.Map, error) {
     return trafficMap, nil;
 }
 
+func attachTcpStatMonitoring() (*ebpf.Map, error) {    
+    var links []link.Link
+	cleanup := func() {
+		for _, l := range links {
+			l.Close()
+		}
+	}
+
+    collectionSpec, err := ebpf.LoadCollectionSpec(".output/tcp_stat_monitor.bpf.o")
+    if err != nil {
+        return nil, fmt.Errorf("加载eBPF集合规范失败: %v", err)
+    }
+    collection, err := ebpf.NewCollectionWithOptions(collectionSpec, ebpf.CollectionOptions{
+        Maps: ebpf.MapOptions{
+            PinPath: "/sys/fs/bpf",
+        },
+    })
+    if err != nil {
+        return nil, fmt.Errorf("创建eBPF集合失败: %v", err)
+    }
+
+	// --- 附加 KProbes (已修正) ---
+	probes := map[string]string{
+		"kp_inet_csk_reqsk_queue_hash_add": "inet_csk_reqsk_queue_hash_add",
+		// "kp_tcp_v6_conn_request": "tcp_v6_conn_request",
+		"kp_tcp_set_state":       "tcp_set_state",
+	}
+
+	for progName, kernelFunc := range probes {
+		prog, exists := collection.Programs[progName]
+		if !exists {
+			cleanup() // 关闭之前已创建的 links
+			collection.Close()
+			return nil, fmt.Errorf("找不到 %s 程序", progName)
+		}
+
+		l, err := link.Kprobe(kernelFunc, prog, nil)
+		if err != nil {
+			cleanup() // 关闭之前已创建的 links
+			collection.Close()
+			return nil, fmt.Errorf("附加 %s 到 %s 失败: %v", progName, kernelFunc, err)
+		}
+		links = append(links, l)
+	}
+
+
+    hashMap, ok := collection.Maps["hist"]
+    if !ok {
+        // 关闭已创建的links
+        for _, l := range links {
+            l.Close()
+        }
+        collection.Close()
+        return nil, fmt.Errorf("找不到hist映射")
+    }
+
+    return hashMap, nil
+}
+
+
 // UpdateSoftirqMetrics 更新软中断指标
 func (m *MetricUpdater) UpdateSoftirqMetrics() error {
     if m == nil {
@@ -212,27 +316,40 @@ func (m *MetricUpdater) UpdateSoftirqMetrics() error {
     if m.softirqMap == nil {
         return fmt.Errorf("softirqMap为nil")
     }
+    fmt.Println("[UpdateSoftirqMetrics] update once...")
+    
+    var vec uint32      // 1. Key 现在是 u32 (代表 vec)，Value 是一个 Per-CPU 的切片
+    var perCPUStats []SoftirqStat // 这是接收所有 CPU 数据的切片
 
-    var key uint32
-    var value SoftirqStat
-    totalCount := 0
+    totalEventsProcessed := 0
     iter := m.softirqMap.Iterate()
-    for iter.Next(&key, &value) {
-        softirqType := getSoftirqTypeName(key)
-        log.Printf("软中断 %s (%d): Count=%d, TotalTime=%d ns, MaxTime=%d ns", 
-            softirqType, key, value.Count, value.TotalTimeNs, value.MaxTimeNs)
-        
-        // 更新Prometheus指标
-        SoftirqNumbers.With(prometheus.Labels{
-            "softirq_type": softirqType,
-            "node": "111",
-        }).Set(float64(value.Count))
-        
-        totalCount += int(value.Count)     
+
+    // 2. 外层循环遍历 Map 中的每一个 key (也就是每个软中断 vec)
+    for iter.Next(&vec, &perCPUStats) {
+        // 3. 内层循环遍历该 key 在所有 CPU 上的值
+        // 切片的索引 `cpuID` 天然地代表了 CPU 的核心号
+        for cpuID, stat := range perCPUStats {
+            // 如果这个 CPU 上确实发生了该类型的软中断 (count > 0)，才上报数据
+            if stat.Count > 0 {
+                irqTypeName := getSoftirqTypeName(vec)
+                cpuIDStr := strconv.Itoa(cpuID) // 将 CPU ID 转换为字符串
+                
+                // 4. 使用 cpuID 和 irqTypeName 作为组合维度上报数据
+                SoftirqNumbers.WithLabelValues(irqTypeName, cpuIDStr, "111").Set(float64(stat.Count))
+                SoftirqTimes.WithLabelValues(irqTypeName, cpuIDStr, "111").Set(float64(stat.MaxTimeNs))
+
+                totalEventsProcessed += int(stat.Count)
+            }
+        }
     }
     
-    if totalCount > 0 {
-        log.Printf("总共处理了 %d 个软中断事件", totalCount)
+    if err := iter.Err(); err != nil {
+        log.Printf("遍历 softirq map 出错: %v", err)
+        return err
+    }
+    
+    if totalEventsProcessed > 0 {
+        log.Printf("总共处理了 %d 个软中断事件", totalEventsProcessed)
     }
     
     return nil
@@ -240,7 +357,6 @@ func (m *MetricUpdater) UpdateSoftirqMetrics() error {
 
 // UpdateNetworkTraffic 更新网络吞吐指标
 func (m *MetricUpdater) UpdateTrafficMetrics() error {
-    // 安全检查
     if m == nil {
         return fmt.Errorf("MetricUpdater为nil")
     }
@@ -250,17 +366,12 @@ func (m *MetricUpdater) UpdateTrafficMetrics() error {
 
     var key uint32
     var value ip_packet_info
-
+    fmt.Println("[UpdateTrafficMetrics] update once...")
     iter := m.trafficMap.Iterate()
     for iter.Next(&key, &value) {
         log.Printf("bytes %d, packets %d", value.Snd_rcv_bytes, value.Snd_rcv_packets)
-        val := reflect.ValueOf(value)
-        for _, ipPacketName := range ipPacketNames {
-            networkTraffic.With(prometheus.Labels{
-                "traffic_type": ipPacketName,
-                "node": "111",
-            }).Set(float64(val.FieldByName(ipPacketName).Uint()))
-        }
+        networkTraffic.WithLabelValues(getTrafficName(key), "111").Set(float64(value.Snd_rcv_bytes))
+        networkTraffic.WithLabelValues(getTrafficName(key), "111").Set(float64(value.Snd_rcv_packets))
     }
 
     return nil
@@ -268,28 +379,34 @@ func (m *MetricUpdater) UpdateTrafficMetrics() error {
 
 // UpdateNetworkTraffic 更新网络吞吐指标
 func (m *MetricUpdater) UpdateCpuStatMetrics() error {
-    // 安全检查
     if m == nil {
         return fmt.Errorf("MetricUpdater为nil")
     }
     if m.cpuStatMap == nil {
         return m.UpdateCpuStatMetricsByKernelMod()
     }
-    return m.UpdateCpuStatMetricsByKernelMod()
+    // return m.UpdateCpuStatMetricsByKernelMod()
 
     var key uint32
-    var value cpu_stat
-
+    var perCPUValues []cpu_stat
     iter := m.cpuStatMap.Iterate()
-    for iter.Next(&key, &value) {
-        log.Printf("user %d, system %d", value.User, value.System)
-        for j, _ := range CpuStatsNames {
-            val := reflect.ValueOf(value)
-            cpuStatName := getCpuStatsName(uint32(j))
-            cpuStatNumbers.With(prometheus.Labels{
-                "cpu_stat_type": cpuStatName,
-                "node": "111",
-            }).Set(float64(val.FieldByName(cpuStatName).Uint()))
+    for iter.Next(&key, &perCPUValues) {
+        if int(key) < len(perCPUValues) {
+            value := perCPUValues[key]
+            if (value.Online == 0) {
+                continue
+            }
+            fmt.Printf("key: %d, user %d, system %d\n", key, value.User, value.System)
+            cpuStatNumbers.WithLabelValues("User", strconv.Itoa(int(key)), "111").Set(float64(value.User))
+            cpuStatNumbers.WithLabelValues("System", strconv.Itoa(int(key)), "111").Set(float64(value.System))
+            cpuStatNumbers.WithLabelValues("Nice", strconv.Itoa(int(key)), "111").Set(float64(value.Nice))
+            cpuStatNumbers.WithLabelValues("Idle", strconv.Itoa(int(key)), "111").Set(float64(value.Idle))
+            cpuStatNumbers.WithLabelValues("Iowait", strconv.Itoa(int(key)),"111").Set(float64(value.Iowait))
+            cpuStatNumbers.WithLabelValues("Irq", strconv.Itoa(int(key)), "111").Set(float64(value.Irq))
+            cpuStatNumbers.WithLabelValues("Softirq", strconv.Itoa(int(key)), "111").Set(float64(value.Softirq))
+            cpuStatNumbers.WithLabelValues("Steal", strconv.Itoa(int(key)), "111").Set(float64(value.Steal))
+            cpuStatNumbers.WithLabelValues("Guest", strconv.Itoa(int(key)), "111").Set(float64(value.Guest))
+            cpuStatNumbers.WithLabelValues("Guest_nice", strconv.Itoa(int(key)), "111").Set(float64(value.Guest_nice))
         }
     }
 
@@ -331,38 +448,50 @@ func (m *MetricUpdater) UpdateCpuStatMetricsByKernelMod() error {
 
 	// 循环现在是安全的
 	for i := 0; i < len(stats); i++ {
-		stat := stats[i] // stat 现在是一个正确对齐的 Go 变量
-
-		// 避免在循环中重复使用反射会更高效
-		// 但即使使用，现在也是安全的
-		// for j, _ := range CpuStatsNames {
-		// 	val := reflect.ValueOf(stat)
-		// 	cpuStatName := getCpuStatsName(uint32(j))
-		// 	cpuStatNumbers.With(prometheus.Labels{
-		// 		"cpu_stat_type": cpuStatName,
-		// 		"node":          "111",
-		// 	}).Set(float64(val.FieldByName(cpuStatName).Uint()))
-		// }
-		
-		// 推荐：如果可能，直接访问字段，避免反射
-		cpuStatNumbers.WithLabelValues("User", "111").Set(float64(stat.User))
-		cpuStatNumbers.WithLabelValues("System", "111").Set(float64(stat.System))
-		// ... 为其他字段设置值
+		stat := stats[i]
+        if (stat.Online == 0) {
+            continue
+        }
+        cpuStatNumbers.WithLabelValues("User", strconv.Itoa(i), "111").Set(float64(stat.User))
+		cpuStatNumbers.WithLabelValues("System", strconv.Itoa(i), "111").Set(float64(stat.System))
+        cpuStatNumbers.WithLabelValues("Nice", strconv.Itoa(i), "111").Set(float64(stat.Nice))
+        cpuStatNumbers.WithLabelValues("Idle", strconv.Itoa(i), "111").Set(float64(stat.Idle))
+        cpuStatNumbers.WithLabelValues("Iowait", strconv.Itoa(i),"111").Set(float64(stat.Iowait))
+        cpuStatNumbers.WithLabelValues("Irq", strconv.Itoa(i), "111").Set(float64(stat.Irq))
+        cpuStatNumbers.WithLabelValues("Softirq", strconv.Itoa(i), "111").Set(float64(stat.Softirq))
+        cpuStatNumbers.WithLabelValues("Steal", strconv.Itoa(i), "111").Set(float64(stat.Steal))
+        cpuStatNumbers.WithLabelValues("Guest", strconv.Itoa(i), "111").Set(float64(stat.Guest))
+        cpuStatNumbers.WithLabelValues("Guest_nice", strconv.Itoa(i), "111").Set(float64(stat.Guest_nice))
 	}
 
+    return nil
+}
 
-    // for _, stat := range stats {
-    //     log.Printf("user %d, system %d", stat.User, stat.System)
-    //     for j, _ := range CpuStatsNames {
-    //         val := reflect.ValueOf(stat)
-    //         cpuStatName := getCpuStatsName(uint32(j))
-    //         cpuStatNumbers.With(prometheus.Labels{
-    //             "cpu_stat_type": cpuStatName,
-    //             "node": "111",
-    //         }).Set(float64(val.FieldByName(cpuStatName).Uint()))
-    //     }
-    // }
+func (m *MetricUpdater) UpdateTcpStatMetrics() error {
+    if m == nil {
+        return fmt.Errorf("MetricUpdater为nil")
+    }
+    if m.tcpStatMap == nil {
+        return fmt.Errorf("TcpStatMap为nil")
+    }
 
+    fmt.Println("[UpdateTcpStatMetrics] update once...")
+    var key uint32
+    var value uint64
+    iter := m.tcpStatMap.Iterate()
+    for iter.Next(&key, &value) {
+        fmt.Printf("current thres: %d, val: %d\n", key, value)
+        upperBoundUs := math.Pow(2, float64(key+1)) - 1
+		histogram, err := TcpStatMetric.GetMetricWithLabelValues("111")
+		if err != nil {
+			log.Printf("Error getting metric with label: %v", err)
+			continue
+		}
+		for i := uint64(0); i < value; i++ {
+			histogram.Observe(upperBoundUs)
+		}
+    }
+    
     return nil
 }
 
@@ -371,6 +500,13 @@ func (m *MetricUpdater) UpdateCpuStatMetricsByKernelMod() error {
 func getSoftirqTypeName(i uint32) string {
     if i >= 0 || i < uint32(len(SoftirqNames)) {
         return SoftirqNames[i]
+    }
+    return "unknown_" + strconv.Itoa(int(i))
+}
+
+func getTrafficName(i uint32) string {
+    if i >= 0 || i < uint32(len(TrafficNames)) {
+        return TrafficNames[i]
     }
     return "unknown_" + strconv.Itoa(int(i))
 }

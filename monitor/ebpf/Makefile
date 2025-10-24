@@ -21,13 +21,13 @@ CFLAGS := -g -Wall
 ALL_LDFLAGS := $(LDFLAGS) $(EXTRA_LDFLAGS)
 
 # C 应用程序（如果需要的话）
-APPS = cpu_softirq_monitor cpu_stat_monitor net_monitor
+APPS = cpu_softirq_monitor cpu_stat_monitor net_monitor tcp_stat_monitor
 
 
 GO ?= go
 GO_APP = monitor
 GO_MAIN := ../agent/main.go ../agent/config.go
-C_WRAPPER_SRCS = net_monitor.c  cpu_stat_monitor.c
+C_WRAPPER_SRCS = net_monitor.c  cpu_stat_monitor.c cpu_softirq_monitor.c tcp_stat_monitor.c
 C_WRAPPER_OBJS = $(addprefix $(OUTPUT)/, $(C_WRAPPER_SRCS:.c=.o))
 C_SHARED_LIB = $(abspath $(OUTPUT)/libmonitor.so)
 

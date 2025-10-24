@@ -1,77 +1,78 @@
-// softirq_monitor.c
 #include <vmlinux.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
-#include "cpu_softirq_monitor.h"
+#include "cpu_softirq_monitor.h" // 假设 softirq_stat 等结构在此定义
 
-// eBPF Maps
+// 用于在 softirq_entry 和 softirq_exit 之间传递时间戳的哈希表
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
-    __uint(max_entries, 1024);
-    __type(key, struct softirq_key);
-    __type(value, u64);
-} start_time SEC(".maps");
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(key_size, sizeof(u32));
+    __uint(value_size, sizeof(u64));
+    __uint(max_entries, 1);
+} start SEC(".maps");
 
+// 【已修改】: 用于存储最终统计结果的 Per-CPU 数组
+// Key 是软中断向量 vec, Value 是每个 CPU 独立的 softirq_stat
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
-    __uint(max_entries, 256);
-    __type(key, u32); // vec (softirq number)
+    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
+    __uint(max_entries, 16); // 支持最多 16 种软中断类型，足够安全
+    __type(key, u32);
     __type(value, struct softirq_stat);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
 } softirq_stats SEC(".maps");
 
-// 挂载点：软中断处理开始
+
+// 挂载到 softirq_entry 函数 (或 tracepoint)
+// SEC("kprobe/softirq_entry")
 SEC("tracepoint/irq/softirq_entry")
-int handle_softirq_entry(struct trace_event_raw_softirq *ctx)
+int handle_softirq_entry(struct trace_event_raw_softirq* ctx)
 {
-    u32 vec = ctx->vec;
-    u32 cpu = bpf_get_smp_processor_id();
     u64 ts = bpf_ktime_get_ns();
-
-    struct softirq_key key = { .cpu = cpu, .vec = vec };
-    bpf_map_update_elem(&start_time, &key, &ts, BPF_ANY);
+    u32 key = 0;
+    bpf_map_update_elem(&start, &key, &ts, BPF_ANY);
     return 0;
 }
 
-// 挂载点：软中断处理结束
+// 挂载到 softirq_exit 函数 (或 tracepoint)
+// SEC("kprobe/softirq_exit")
 SEC("tracepoint/irq/softirq_exit")
-int handle_softirq_exit(struct trace_event_raw_softirq *ctx)
-{ 
-    u32 vec = ctx->vec;
-    u32 cpu = bpf_get_smp_processor_id();
-    u64 *start_ts;
-    u64 end_ts = bpf_ktime_get_ns();
-    
-    // 获取开始时间
-    struct softirq_key key = { .cpu = cpu, .vec = vec };
-    start_ts = bpf_map_lookup_elem(&start_time, &key);
+int handle_softirq_exit(struct trace_event_raw_softirq* ctx)
+{
+    u32 key_map = 0;
+    u64 *start_ts = bpf_map_lookup_elem(&start, &key_map);
     if (!start_ts) {
-        return 0; // 没有找到对应的开始时间
+        return 0;
+    }
+
+    u64 delta = bpf_ktime_get_ns() - *start_ts;
+    
+    // 从 tracepoint 上下文中获取软中断向量号 (vec)
+    u32 vec = ctx->vec;
+
+    // 【已修改】: Key 现在就是 vec
+    if (vec >= 16) { // 防止 key 超出 max_entries 范围
+        return 0;
+    }
+
+    // 【已修改】: 在 PERCPU_ARRAY 中, lookup 返回当前 CPU 的数据指针, 无需检查是否为 NULL
+    struct softirq_stat *stat = bpf_map_lookup_elem(&softirq_stats, &vec);
+    if (!stat) { // 这个检查理论上不会失败，但作为安全措施保留
+        return 0;
+    }
+
+    // 【已修改】: 直接在获取到的指针上进行原子操作或普通更新
+    // 无需区分新旧元素，也无需再调用 map_update_elem
+    __sync_fetch_and_add(&stat->count, 1); // 使用原子加更安全
+    __sync_fetch_and_add(&stat->total_time_ns, delta);
+
+    // 对于 max_time_ns, 需要使用循环来原子地比较和交换 (CAS)
+    // 这是一个简化的非原子版本，在高并发下可能不精确，但在很多场景下足够
+    if (delta > stat->max_time_ns) {
+        stat->max_time_ns = delta;
     }
     
-    // 计算处理时间
-    u64 duration = end_ts - *start_ts;
-    
-    // 更新统计信息
-    struct softirq_stat *stat;
-    stat = bpf_map_lookup_elem(&softirq_stats, &vec);
-    if (!stat) {
-        struct softirq_stat new_stat = {0};
-        bpf_map_update_elem(&softirq_stats, &vec, &new_stat, BPF_NOEXIST);
-        stat = bpf_map_lookup_elem(&softirq_stats, &vec);
-        if (!stat) return 0;
-    }
-    
-    // 更新统计值
-    stat->count++;
-    stat->total_time_ns += duration;
-    if (duration > stat->max_time_ns) {
-        stat->max_time_ns = duration;
-    }
-    
-    // 清理开始时间
-    bpf_map_delete_elem(&start_time, &key);
+    // (如果需要严格的原子max，可以使用 bpf_spin_lock + 普通更新)
+
     return 0;
 }
 
-char _license[] SEC("license") = "GPL";
+char LICENSE[] SEC("license") = "GPL";

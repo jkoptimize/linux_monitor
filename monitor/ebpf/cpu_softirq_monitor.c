@@ -83,13 +83,13 @@ void print() {
 }
 
 
-int main()
-{
-    init_ebpf_programs();
+// int main()
+// {
+//     init_ebpf_programs();
 
-    while(1){};
+//     while(1){};
 
-    cleanup_ebpf_programs();
+//     cleanup_ebpf_programs();
 
-    return 0;
-}
+//     return 0;
+// }

@@ -53,7 +53,7 @@ func main() {
     }
     
     // 定期更新指标
-    go func() {
+    // go func() {
         ticker := time.NewTicker(10 * time.Second)
         defer ticker.Stop()
         metricsUpdater, err := exporter.NewMetricUpdater();
@@ -73,9 +73,12 @@ func main() {
                 if err := metricsUpdater.UpdateTrafficMetrics(); err != nil {
                     log.Printf("Failed to update Traffic metrics: ", err)
                 }
+                if err := metricsUpdater.UpdateTcpStatMetrics(); err != nil {
+                    log.Printf("Failed to update TCP metrics: ", err)
+                }
             }
         }
-    }()
+    // }()
 
     
     log.Println("eBPF monitoring system is fully operational")

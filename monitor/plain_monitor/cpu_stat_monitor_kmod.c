@@ -28,6 +28,7 @@
 
 struct cpu_stat {
     // char cpu_name[16];
+    u32 online;
     u64 user;
     u64 nice;
     u64 system;
@@ -51,11 +52,13 @@ static void update_cpu_stats(struct cpu_stat *stats) {
     int cpu;
     for (cpu = 0; cpu < MAX_CPU; ++cpu) {
         if (!cpu_online(cpu)) {
+            stats[cpu].online = 0;
             // stats[cpu].cpu_name[0] = '\0';
             continue;
         }
         // snprintf(stats[cpu].cpu_name, sizeof(stats[cpu].cpu_name), "cpu%d", cpu);
         u64 *stat = kcpustat_cpu(cpu).cpustat;
+        stats[cpu].online = 1;
         stats[cpu].user = stat[CPUTIME_USER];
         stats[cpu].nice = stat[CPUTIME_NICE];
         stats[cpu].system = stat[CPUTIME_SYSTEM];

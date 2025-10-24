@@ -14,7 +14,7 @@ struct {
     __uint(max_entries, 2);
     __type(key, u32);
     __type(value, struct ip_packet_info);
-    __uint(pinning, LIBBPF_PIN_BY_NAME);
+    // __uint(pinning, LIBBPF_PIN_BY_NAME);
 } packetsInfo SEC(".maps");
 
 
@@ -41,7 +41,7 @@ int tc_ingress(struct __sk_buff *ctx)
 	l3 = (struct iphdr *)(l2 + 1);
 	if ((void *)(l3 + 1) > data_end)
 		return TC_ACT_OK;
-    bpf_printk("Get IP packet: tot_len: %d, ttl: %d", bpf_ntohs(l3->tot_len), l3->ttl);
+    // bpf_printk("Get IP packet: tot_len: %d, ttl: %d", bpf_ntohs(l3->tot_len), l3->ttl);
 
     u32 key = 0; // ingress
     struct ip_packet_info *pinfo = bpf_map_lookup_elem(&packetsInfo, &key);
@@ -82,7 +82,7 @@ int tc_egress(struct __sk_buff *ctx)
 	if ((void *)(l3 + 1) > data_end)
 		return TC_ACT_OK;
 
-	bpf_printk("SendOut IP packet: tot_len: %d, ttl: %d", bpf_ntohs(l3->tot_len), l3->ttl);
+	// bpf_printk("SendOut IP packet: tot_len: %d, ttl: %d", bpf_ntohs(l3->tot_len), l3->ttl);
 
     u32 key = 1; // egress
     struct ip_packet_info *pinfo = bpf_map_lookup_elem(&packetsInfo, &key);

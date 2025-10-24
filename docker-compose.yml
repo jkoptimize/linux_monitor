@@ -43,7 +43,7 @@ services:
   linux_monitor:
     build: 
       context: .
-      dockerfile: Dockerfile
+      dockerfile: dockerfile
     container_name: linux_monitor
     privileged: true  # 关键：需要访问宿主机/proc
     ports:
