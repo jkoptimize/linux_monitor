@@ -19,7 +19,7 @@ RUN \
 
 RUN apt update && apt install  ca-certificates clang libelf1 libelf-dev zlib1g-dev libcap-dev binutils-dev libssl-dev -y
 
-RUN cd /app/linux_monitor/monitor && go mod init monitor && go mod tidy
+RUN cd /app/linux_monitor/monitor && go env -w GOPROXY=https://goproxy.cn && go mod init monitor && go mod tidy
 
 # RUN go build -o monitor_agent ./agent/main.go
 
