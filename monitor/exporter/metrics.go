@@ -116,11 +116,14 @@ type MetricUpdater struct {
 }
 
 func NewMetricUpdater() (*MetricUpdater, error) {
+    codePath := os.Getenv("KERNEL_BINARY_PATH")
+    fmt.Println("kernel code path:", codePath)
+
     if err := rlimit.RemoveMemlock(); err != nil {
         return nil, fmt.Errorf("移除内存限制失败: %v", err)
     }
 
-    softirqMap, err := attachSoftirqMonitoring()
+    softirqMap, err := attachSoftirqMonitoring(codePath)
     if err != nil {
         return nil, fmt.Errorf("NewMetricUpdater失败: %v", err)
     }
@@ -133,7 +136,7 @@ func NewMetricUpdater() (*MetricUpdater, error) {
     if err != nil {
         return nil, fmt.Errorf("NewMetricUpdater失败: %v", err)
     }
-    tcpStatMap, err := attachTcpStatMonitoring()
+    tcpStatMap, err := attachTcpStatMonitoring(codePath)
     if err != nil {
         return nil, fmt.Errorf("NewTcpStatMonitoring失败: %v", err)
     }
@@ -149,11 +152,11 @@ func NewMetricUpdater() (*MetricUpdater, error) {
     return updater, nil
 }
 
-func attachSoftirqMonitoring() (*ebpf.Map, error) {
+func attachSoftirqMonitoring(codePath string) (*ebpf.Map, error) {
     var links []link.Link
 
     // Load the eBPF program specification
-    spec, err := ebpf.LoadCollectionSpec(".output/cpu_softirq_monitor.bpf.o")
+    spec, err := ebpf.LoadCollectionSpec(codePath + ".output/cpu_softirq_monitor.bpf.o")
     if err != nil {
         return nil, fmt.Errorf("failed to load eBPF collection spec: %v", err)
     }
@@ -248,7 +251,7 @@ func attachTrafficMonitoring() (*ebpf.Map, error) {
     return trafficMap, nil;
 }
 
-func attachTcpStatMonitoring() (*ebpf.Map, error) {    
+func attachTcpStatMonitoring(codePath string) (*ebpf.Map, error) {    
     var links []link.Link
 	cleanup := func() {
 		for _, l := range links {
@@ -256,7 +259,7 @@ func attachTcpStatMonitoring() (*ebpf.Map, error) {
 		}
 	}
 
-    collectionSpec, err := ebpf.LoadCollectionSpec(".output/tcp_stat_monitor.bpf.o")
+    collectionSpec, err := ebpf.LoadCollectionSpec(codePath + ".output/tcp_stat_monitor.bpf.o")
     if err != nil {
         return nil, fmt.Errorf("加载eBPF集合规范失败: %v", err)
     }

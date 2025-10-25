@@ -53,6 +53,7 @@ services:
     environment:
       - PROMETHEUS_SCRAPE_INTERVAL=15s  # 与Prometheus拉取间隔匹配
       - LD_LIBRARY_PATH=/app/linux_monitor/monitor/ebpf/.output
+      - KERNEL_BINARY_PATH=/app/linux_monitor/monitor/ebpf/
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/metrics"]
       interval: 10s
