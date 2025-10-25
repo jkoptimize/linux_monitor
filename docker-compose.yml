@@ -69,13 +69,8 @@ services:
 
 
 volumes:
-  grafana_data:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ./data/grafana
-    
+  grafana_data: {}
+
 networks:
   monitoring_network:
     driver: bridge
