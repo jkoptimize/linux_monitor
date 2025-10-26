@@ -6,10 +6,14 @@ services:
     container_name: prometheus
     ports:
       - "9090:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml' 
+      - '--storage.tsdb.retention.time=1d'  # 设置数据保留时间为1天
     networks:
       - monitoring_network
     volumes:
       - ./prometheus/config:/etc/prometheus
+      - prometheus_data:/prometheus
     depends_on:
       linux_monitor:
         condition: service_healthy
@@ -70,6 +74,7 @@ services:
 
 volumes:
   grafana_data: {}
+  prometheus_data: {}
 
 networks:
   monitoring_network:
