@@ -260,12 +260,6 @@ func attachTrafficMonitoring() (*ebpf.Map, error) {
 }
 
 func attachTcpStatMonitoring(codePath string) (*Monitor, error) {    
-	cleanup := func() {
-		for _, l := range monitor.links {
-			l.Close()
-		}
-	}
-
     collectionSpec, err := ebpf.LoadCollectionSpec(codePath + ".output/tcp_stat_monitor.bpf.o")
     if err != nil {
         return nil, fmt.Errorf("加载eBPF集合规范失败: %v", err)
@@ -281,7 +275,11 @@ func attachTcpStatMonitoring(codePath string) (*Monitor, error) {
     monitor := &Monitor{
         coll: collection,
     }
-
+	cleanup := func() {
+		for _, l := range monitor.links {
+			l.Close()
+		}
+	}
 	// --- 附加 KProbes (已修正) ---
 	probes := map[string]string{
 		"kp_inet_csk_reqsk_queue_hash_add": "inet_csk_reqsk_queue_hash_add",
