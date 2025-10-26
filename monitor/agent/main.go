@@ -53,7 +53,7 @@ func main() {
     }
     
     // 定期更新指标
-    // go func() {
+    go func() {
         ticker := time.NewTicker(10 * time.Second)
         defer ticker.Stop()
         metricsUpdater, err := exporter.NewMetricUpdater();
@@ -78,7 +78,7 @@ func main() {
                 }
             }
         }
-    // }()
+    }()
 
     
     log.Println("eBPF monitoring system is fully operational")

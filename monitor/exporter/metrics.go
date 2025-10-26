@@ -109,10 +109,16 @@ func createEBPFMetrics() []prometheus.Collector {
 
 // 指标更新函数
 type MetricUpdater struct {
-    softirqMap *ebpf.Map
+    softirqMonitor *Monitor
     cpuStatMap *ebpf.Map
     trafficMap *ebpf.Map
-    tcpStatMap *ebpf.Map
+    tcpMonitor *Monitor
+}
+
+type Monitor struct {
+    coll  *ebpf.Collection
+    links []link.Link
+    statsMap *ebpf.Map
 }
 
 func NewMetricUpdater() (*MetricUpdater, error) {
@@ -123,7 +129,7 @@ func NewMetricUpdater() (*MetricUpdater, error) {
         return nil, fmt.Errorf("移除内存限制失败: %v", err)
     }
 
-    softirqMap, err := attachSoftirqMonitoring(codePath)
+    softirqMonitor, err := attachSoftirqMonitoring(codePath)
     if err != nil {
         return nil, fmt.Errorf("NewMetricUpdater失败: %v", err)
     }
@@ -136,25 +142,23 @@ func NewMetricUpdater() (*MetricUpdater, error) {
     if err != nil {
         return nil, fmt.Errorf("NewMetricUpdater失败: %v", err)
     }
-    tcpStatMap, err := attachTcpStatMonitoring(codePath)
+    tcpMonitor, err := attachTcpStatMonitoring(codePath)
     if err != nil {
         return nil, fmt.Errorf("NewTcpStatMonitoring失败: %v", err)
     }
 
     updater := &MetricUpdater{
-        softirqMap: softirqMap,
+        softirqMonitor: softirqMonitor,
         cpuStatMap: cpuStatMap,
         trafficMap: trafficMap,
-        tcpStatMap: tcpStatMap,
+        tcpMonitor: tcpMonitor,
     }
     
     log.Println("eBPF程序成功加载并附加到软中断tracepoints")
     return updater, nil
 }
 
-func attachSoftirqMonitoring(codePath string) (*ebpf.Map, error) {
-    var links []link.Link
-
+func attachSoftirqMonitoring(codePath string) (*Monitor, error) {
     // Load the eBPF program specification
     spec, err := ebpf.LoadCollectionSpec(codePath + ".output/cpu_softirq_monitor.bpf.o")
     if err != nil {
@@ -170,6 +174,9 @@ func attachSoftirqMonitoring(codePath string) (*ebpf.Map, error) {
     if err != nil {
         return nil, fmt.Errorf("failed to create eBPF collection: %v", err)
     }
+    monitor := &Monitor{
+        coll: coll,
+    }
 
     // Attach to the softirq_entry tracepoint
     if prog, ok := coll.Programs["handle_softirq_entry"]; ok {
@@ -178,7 +185,7 @@ func attachSoftirqMonitoring(codePath string) (*ebpf.Map, error) {
             coll.Close()
             return nil, fmt.Errorf("failed to attach to softirq_entry tracepoint: %v", err)
         }
-        links = append(links, tp)
+        monitor.links = append(monitor.links, tp)
     } else {
         coll.Close()
         return nil, fmt.Errorf("could not find handle_softirq_entry program")
@@ -188,15 +195,15 @@ func attachSoftirqMonitoring(codePath string) (*ebpf.Map, error) {
     if prog, ok := coll.Programs["handle_softirq_exit"]; ok {
         tp, err := link.Tracepoint("irq", "softirq_exit", prog, nil)
         if err != nil {
-            for _, l := range links {
+            for _, l := range monitor.links {
                 l.Close()
             }
             coll.Close()
             return nil, fmt.Errorf("failed to attach to softirq_exit tracepoint: %v", err)
         }
-        links = append(links, tp)
+        monitor.links = append(monitor.links, tp)
     } else {
-        for _, l := range links {
+        for _, l := range monitor.links {
             l.Close()
         }
         coll.Close()
@@ -206,14 +213,15 @@ func attachSoftirqMonitoring(codePath string) (*ebpf.Map, error) {
     // Retrieve the statistics map
     statsMap, ok := coll.Maps["softirq_stats"]
     if !ok {
-        for _, l := range links {
+        for _, l := range monitor.links {
             l.Close()
         }
         coll.Close()
         return nil, fmt.Errorf("could not find softirq_stats map")
     }
+    monitor.statsMap = statsMap;
 
-    return statsMap, nil
+    return monitor, nil
 }
 
 func attachCpuStatMonitoring() (*ebpf.Map, error) {
@@ -251,10 +259,9 @@ func attachTrafficMonitoring() (*ebpf.Map, error) {
     return trafficMap, nil;
 }
 
-func attachTcpStatMonitoring(codePath string) (*ebpf.Map, error) {    
-    var links []link.Link
+func attachTcpStatMonitoring(codePath string) (*Monitor, error) {    
 	cleanup := func() {
-		for _, l := range links {
+		for _, l := range monitor.links {
 			l.Close()
 		}
 	}
@@ -270,6 +277,9 @@ func attachTcpStatMonitoring(codePath string) (*ebpf.Map, error) {
     })
     if err != nil {
         return nil, fmt.Errorf("创建eBPF集合失败: %v", err)
+    }
+    monitor := &Monitor{
+        coll: collection,
     }
 
 	// --- 附加 KProbes (已修正) ---
@@ -293,21 +303,21 @@ func attachTcpStatMonitoring(codePath string) (*ebpf.Map, error) {
 			collection.Close()
 			return nil, fmt.Errorf("附加 %s 到 %s 失败: %v", progName, kernelFunc, err)
 		}
-		links = append(links, l)
+		monitor.links = append(monitor.links, l)
 	}
-
 
     hashMap, ok := collection.Maps["hist"]
     if !ok {
         // 关闭已创建的links
-        for _, l := range links {
+        for _, l := range monitor.links {
             l.Close()
         }
         collection.Close()
         return nil, fmt.Errorf("找不到hist映射")
     }
+    monitor.statsMap = hashMap
 
-    return hashMap, nil
+    return monitor, nil
 }
 
 
@@ -316,7 +326,7 @@ func (m *MetricUpdater) UpdateSoftirqMetrics() error {
     if m == nil {
         return fmt.Errorf("MetricUpdater为nil")
     }
-    if m.softirqMap == nil {
+    if m.softirqMonitor.statsMap == nil {
         return fmt.Errorf("softirqMap为nil")
     }
     fmt.Println("[UpdateSoftirqMetrics] update once...")
@@ -325,7 +335,7 @@ func (m *MetricUpdater) UpdateSoftirqMetrics() error {
     var perCPUStats []SoftirqStat // 这是接收所有 CPU 数据的切片
 
     totalEventsProcessed := 0
-    iter := m.softirqMap.Iterate()
+    iter := m.softirqMonitor.statsMap.Iterate()
 
     // 2. 外层循环遍历 Map 中的每一个 key (也就是每个软中断 vec)
     for iter.Next(&vec, &perCPUStats) {
@@ -474,14 +484,14 @@ func (m *MetricUpdater) UpdateTcpStatMetrics() error {
     if m == nil {
         return fmt.Errorf("MetricUpdater为nil")
     }
-    if m.tcpStatMap == nil {
+    if m.tcpMonitor.statsMap == nil {
         return fmt.Errorf("TcpStatMap为nil")
     }
 
     fmt.Println("[UpdateTcpStatMetrics] update once...")
     var key uint32
     var value uint64
-    iter := m.tcpStatMap.Iterate()
+    iter := m.tcpMonitor.statsMap.Iterate()
     for iter.Next(&key, &value) {
         fmt.Printf("current thres: %d, val: %d\n", key, value)
         upperBoundUs := math.Pow(2, float64(key+1)) - 1

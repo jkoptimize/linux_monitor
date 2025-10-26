@@ -94,13 +94,13 @@ int get_conn_key_from_req(struct request_sock *req, struct conn_key_t *key, __u1
         return -1;
     }
 
-    // --- 日志打印部分可以保持不变，用于调试 ---
-    bpf_printk("[KEY REQ] (Normalized) FAMILY: %x SPORT: %x DPORT: %x",
-            key->family, my_ntohs(key->sport), my_ntohs(key->dport));
-    bpf_printk("[KEY REQ] SADDR (0-7): %llx", *(__u64*)key->saddr);
-    bpf_printk("[KEY REQ] SADDR (8-15): %llx", *(__u64*)(key->saddr + 8));
-    bpf_printk("[KEY REQ] DADDR (0-7): %llx", *(__u64*)key->daddr);
-    bpf_printk("[KEY REQ] DADDR (8-15): %llx", *(__u64*)(key->daddr + 8));
+    // // --- 日志打印部分可以保持不变，用于调试 ---
+    // bpf_printk("[KEY REQ] (Normalized) FAMILY: %x SPORT: %x DPORT: %x",
+    //         key->family, my_ntohs(key->sport), my_ntohs(key->dport));
+    // bpf_printk("[KEY REQ] SADDR (0-7): %llx", *(__u64*)key->saddr);
+    // bpf_printk("[KEY REQ] SADDR (8-15): %llx", *(__u64*)(key->saddr + 8));
+    // bpf_printk("[KEY REQ] DADDR (0-7): %llx", *(__u64*)key->daddr);
+    // bpf_printk("[KEY REQ] DADDR (8-15): %llx", *(__u64*)(key->daddr + 8));
 
     return 0;
 }
@@ -142,16 +142,16 @@ int get_conn_key_from_sock(struct sock *sk, struct conn_key_t *key) {
         return -1;
     }
     
-    bpf_printk("[KEY SOCK] FAMILY: %x SPORT: %x DPORT: %x PAD: %x", 
-            key->family, key->sport, key->dport, key->pad);
-    bpf_printk("[KEY REQ] SADDR (0-7): %llx", 
-            *(__u64*)key->saddr);
-    bpf_printk("[KEY REQ] SADDR (8-15): %llx", 
-            *(__u64*)(key->saddr + 8));
-    bpf_printk("[KEY REQ] DADDR (0-7): %llx", 
-            *(__u64*)key->daddr);
-    bpf_printk("[KEY REQ] DADDR (8-15): %llx", 
-            *(__u64*)(key->daddr + 8));
+    // bpf_printk("[KEY SOCK] FAMILY: %x SPORT: %x DPORT: %x PAD: %x", 
+    //         key->family, key->sport, key->dport, key->pad);
+    // bpf_printk("[KEY REQ] SADDR (0-7): %llx", 
+    //         *(__u64*)key->saddr);
+    // bpf_printk("[KEY REQ] SADDR (8-15): %llx", 
+    //         *(__u64*)(key->saddr + 8));
+    // bpf_printk("[KEY REQ] DADDR (0-7): %llx", 
+    //         *(__u64*)key->daddr);
+    // bpf_printk("[KEY REQ] DADDR (8-15): %llx", 
+    //         *(__u64*)(key->daddr + 8));
     return 0;
 }
 

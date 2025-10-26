@@ -40,6 +40,7 @@ int handle_softirq_exit(struct trace_event_raw_softirq* ctx)
     u32 key_map = 0;
     u64 *start_ts = bpf_map_lookup_elem(&start, &key_map);
     if (!start_ts) {
+        // bpf_printk("[handle_softirq_exit] start_ts null");
         return 0;
     }
 
@@ -50,12 +51,14 @@ int handle_softirq_exit(struct trace_event_raw_softirq* ctx)
 
     // 【已修改】: Key 现在就是 vec
     if (vec >= 16) { // 防止 key 超出 max_entries 范围
+        // bpf_printk("[handle_softirq_exit] vec >= 16");
         return 0;
     }
 
     // 【已修改】: 在 PERCPU_ARRAY 中, lookup 返回当前 CPU 的数据指针, 无需检查是否为 NULL
     struct softirq_stat *stat = bpf_map_lookup_elem(&softirq_stats, &vec);
     if (!stat) { // 这个检查理论上不会失败，但作为安全措施保留
+        // bpf_printk("[handle_softirq_exit] stat is null");
         return 0;
     }
 
@@ -70,7 +73,7 @@ int handle_softirq_exit(struct trace_event_raw_softirq* ctx)
         stat->max_time_ns = delta;
     }
     
-    // (如果需要严格的原子max，可以使用 bpf_spin_lock + 普通更新)
+    // (如果需要严格的原子max，可以使用 bpf_spin_lock + 普通更新)   
 
     return 0;
 }
